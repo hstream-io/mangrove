@@ -1,0 +1,62 @@
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.33.0.
+--
+-- see: https://github.com/sol/hpack
+--
+-- hash: a4f9faffded0cc7b9948af6a75b6da1789d43cb8d8fec3df294455a51a699cd9
+
+name:           mangrove
+version:        0.0.0.0
+description:    Please see the README on GitHub at <https://github.com/hstream-io/mangrove#readme>
+homepage:       https://github.com/hstream-io/mangrove#readme
+bug-reports:    https://github.com/hstream-io/mangrove/issues
+author:         Commelina
+maintainer:     maosics@gmail.com
+copyright:      2020 EMQ Technologies Co., Ltd.
+license:        BSD3
+license-file:   LICENSE
+build-type:     Simple
+extra-source-files:
+    README.md
+    ChangeLog.md
+
+source-repository head
+  type: git
+  location: https://github.com/hstream-io/mangrove
+
+library
+  exposed-modules:
+      Lib
+  other-modules:
+      Paths_mangrove
+  hs-source-dirs:
+      src
+  build-depends:
+      base >=4.7 && <5
+  default-language: Haskell2010
+
+executable mangrove-exe
+  main-is: Main.hs
+  other-modules:
+      Paths_mangrove
+  hs-source-dirs:
+      app
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      base >=4.7 && <5
+    , mangrove
+  default-language: Haskell2010
+
+test-suite mangrove-test
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  other-modules:
+      Paths_mangrove
+  hs-source-dirs:
+      test
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      base >=4.7 && <5
+    , mangrove
+  default-language: Haskell2010

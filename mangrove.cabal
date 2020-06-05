@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: a4f9faffded0cc7b9948af6a75b6da1789d43cb8d8fec3df294455a51a699cd9
+-- hash: c09831d70274e40b93833adcd0110520659f0469b203f9fbbce3da0a25533ef6
 
 name:           mangrove
 version:        0.0.0.0
@@ -34,6 +34,19 @@ library
       src
   build-depends:
       base >=4.7 && <5
+    , bytestring
+    , co-log
+    , containers
+    , exceptions
+    , hesp
+    , log-store
+    , mtl
+    , network-simple
+    , optparse-applicative
+    , text
+    , time
+    , transformers
+    , vector
   default-language: Haskell2010
 
 executable mangrove-exe
@@ -45,7 +58,20 @@ executable mangrove-exe
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
+    , bytestring
+    , co-log
+    , containers
+    , exceptions
+    , hesp
+    , log-store
     , mangrove
+    , mtl
+    , network-simple
+    , optparse-applicative
+    , text
+    , time
+    , transformers
+    , vector
   default-language: Haskell2010
 
 test-suite mangrove-test
@@ -58,5 +84,18 @@ test-suite mangrove-test
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
+    , bytestring
+    , co-log
+    , containers
+    , exceptions
+    , hesp
+    , log-store
     , mangrove
+    , mtl
+    , network-simple
+    , optparse-applicative
+    , text
+    , time
+    , transformers
+    , vector
   default-language: Haskell2010

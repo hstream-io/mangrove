@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: c09831d70274e40b93833adcd0110520659f0469b203f9fbbce3da0a25533ef6
+-- hash: 432321cc76dd22c5c613e15203e11cd650bc1c3bf7f4171ef95256bc3ef51ed6
 
 name:           mangrove
 version:        0.0.0.0
@@ -27,7 +27,9 @@ source-repository head
 
 library
   exposed-modules:
-      Lib
+      Mangrove
+      Mangrove.Server
+      Mangrove.Types
   other-modules:
       Paths_mangrove
   hs-source-dirs:

@@ -34,7 +34,18 @@ packages:
 # These entries can reference officially published versions as well as
 # forks / in-progress versions pinned to a git hash. For example:
 #
-# extra-deps:
+extra-deps:
+
+- git: https://github.com/daleiz/log-store
+  commit: 3c42d05f72642b63d98bb4d9facb07531b926fd6
+
+- git: https://github.com/daleiz/rocksdb-haskell
+  commit: 33faa6a2659b5bab6054647ed51c73716761b449
+
+- git: https://github.com/hstream-io/hesp.git
+  commit: d4909a7c449a950616c94529001df4b6c2086e87
+
+
 # - acme-missiles-0.3
 # - git: https://github.com/commercialhaskell/stack.git
 #   commit: e7b331f14bcffb8367cd58fbfc8b40ec7642100a

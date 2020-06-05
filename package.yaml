@@ -21,6 +21,19 @@ description:         Please see the README on GitHub at <https://github.com/hstr
 
 dependencies:
 - base >= 4.7 && < 5
+- bytestring
+- time
+- text
+- containers
+- vector
+- exceptions
+- mtl
+- transformers
+- network-simple
+- optparse-applicative
+- hesp
+- log-store
+- co-log
 
 library:
   source-dirs: src

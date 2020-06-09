@@ -37,13 +37,13 @@ packages:
 extra-deps:
 
 - git: https://github.com/daleiz/log-store
-  commit: 3c42d05f72642b63d98bb4d9facb07531b926fd6
+  commit: 4cfb66be7102732c2702709cbca77723720632e8
 
 - git: https://github.com/daleiz/rocksdb-haskell
-  commit: 33faa6a2659b5bab6054647ed51c73716761b449
+  commit: 109af08f95b40f458d4933e3725ecb3e59337c39
 
 - git: https://github.com/hstream-io/hesp.git
-  commit: d4909a7c449a950616c94529001df4b6c2086e87
+  commit: 187a4850170503264f684021b77b8f762c443647
 
 
 # - acme-missiles-0.3

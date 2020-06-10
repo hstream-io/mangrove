@@ -21,19 +21,23 @@ module Mangrove.Types
 
 import qualified Colog
 import           Control.Monad.Reader  (MonadIO, MonadReader, ReaderT)
-import           Data.ByteString       (ByteString, append)
+import           Data.ByteString       (ByteString)
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.Vector           as V
+import           Data.Word             (Word64)
 import qualified Network.HESP          as HESP
-import           Network.HESP.Commands (commandParser, extractBulkStringParam)
+import           Network.HESP.Commands (commandParser, extractBulkStringParam,
+                                        extractIntegerParam)
 import           Options.Applicative   (Parser, ParserInfo, fullDesc, header,
                                         help, helper, info, long, metavar,
                                         progDesc, short, strOption, (<**>))
+import           Text.Read             (readMaybe)
 
 type QueryName = String
 type RequestID = ByteString
 
 data RequestType = SPut ByteString ByteString
+    | SGet ByteString Word64 Word64 Integer Integer
     deriving (Show, Eq)
 
 parseSPut :: V.Vector HESP.Message
@@ -43,12 +47,33 @@ parseSPut paras = do
   payload <- extractBulkStringParam "Payload"    paras 1
   return   $ SPut topic payload
 
+validateInt :: ByteString -> ByteString -> Word64 -> Either ByteString Word64
+validateInt label s def
+  | s == ""   = Right def
+  | otherwise = case readMaybe (BSC.unpack s) of
+      Nothing -> Left $ label <> " must be an integer."
+      Just x  -> Right x
+
+parseSGet :: V.Vector HESP.Message
+          -> Either ByteString RequestType
+parseSGet paras = do
+  topic   <- extractBulkStringParam "Topic"              paras 0
+  sids    <- extractBulkStringParam "Start ID"           paras 1
+  sid     <- validateInt            "Start ID"           sids  0
+  eids    <- extractBulkStringParam "End ID"             paras 2
+  eid     <- validateInt            "End ID"             eids (-1)
+  maxn    <- extractIntegerParam    "Max message number" paras 3
+  offset  <- extractIntegerParam    "Offset"             paras 4
+  return $ SGet topic sid eid maxn offset
+
+
 parseRequest :: HESP.Message
              -> Either ByteString RequestType
 parseRequest msg = do
   (n, paras) <- commandParser msg
   case n of
     "sput" -> parseSPut paras
+    "sget" -> parseSGet paras
     _      -> Left $ "Unrecognized request " <> n <> "."
 
 recvReq :: Either String HESP.Message

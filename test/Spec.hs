@@ -92,10 +92,12 @@ app = do
     liftIO $ threadDelay 1000000
     time' <- liftIO getCurrentTime
     liftIO $ HESP.sendMsg s $
-      HESP.mkArrayFromList [ HESP.mkBulkString "sput"
-                           , HESP.mkBulkString "00000"
-                           , HESP.mkBulkString "topic_1"
-                           , HESP.mkBulkString (BSC.pack . show $ time')
+      HESP.mkArrayFromList [ HESP.mkBulkString "sget"
+                           , HESP.mkBulkString "topic_that_does_not_exist"
+                           , HESP.mkBulkString ""
+                           , HESP.mkBulkString ""
+                           , HESP.Integer 10
+                           , HESP.Integer 0
                            ]
     acks <- liftIO $ HESP.recvMsgs s 1024
     mapM_ processAck acks

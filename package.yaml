@@ -28,6 +28,7 @@ dependencies:
 - vector
 - exceptions
 - mtl
+- conduit
 - transformers
 - network-simple
 - optparse-applicative

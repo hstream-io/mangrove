@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 432321cc76dd22c5c613e15203e11cd650bc1c3bf7f4171ef95256bc3ef51ed6
+-- hash: 1a1f02d47a3bee9cb87e1a1cfc753db645dfeb48e1731ee949987e27f878eaf3
 
 name:           mangrove
 version:        0.0.0.0
@@ -38,6 +38,7 @@ library
       base >=4.7 && <5
     , bytestring
     , co-log
+    , conduit
     , containers
     , exceptions
     , hesp
@@ -62,6 +63,7 @@ executable mangrove-exe
       base >=4.7 && <5
     , bytestring
     , co-log
+    , conduit
     , containers
     , exceptions
     , hesp
@@ -88,6 +90,7 @@ test-suite mangrove-test
       base >=4.7 && <5
     , bytestring
     , co-log
+    , conduit
     , containers
     , exceptions
     , hesp

@@ -23,6 +23,8 @@ import qualified Colog
 import           Control.Monad.Reader  (MonadIO, MonadReader, ReaderT)
 import           Data.ByteString       (ByteString)
 import qualified Data.ByteString.Char8 as BSC
+import qualified Data.Text             as Text
+import           Data.Text.Encoding    (encodeUtf8)
 import qualified Data.Vector           as V
 import           Data.Word             (Word64)
 import qualified Network.HESP          as HESP
@@ -78,9 +80,8 @@ parseRequest msg = do
 
 recvReq :: Either String HESP.Message
         -> Either ByteString RequestType
-recvReq (Left e)    = Left (BSC.pack e)
 recvReq (Right msg) = parseRequest msg
-
+recvReq (Left e)    = Left . encodeUtf8 . Text.pack $ e
 
 data ServerConfig = ServerConfig
     { serverPort :: String

@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 1a1f02d47a3bee9cb87e1a1cfc753db645dfeb48e1731ee949987e27f878eaf3
+-- hash: d8ce49083cd01a9945e5d9fd136e2710ddae95212c1f05646ea35de12069c91d
 
 name:           mangrove
 version:        0.0.0.0
@@ -29,7 +29,9 @@ library
   exposed-modules:
       Mangrove
       Mangrove.Server
+      Mangrove.Store
       Mangrove.Types
+      Mangrove.Utils
   other-modules:
       Paths_mangrove
   hs-source-dirs:
@@ -44,6 +46,7 @@ library
     , hesp
     , log-store
     , mtl
+    , network
     , network-simple
     , optparse-applicative
     , text
@@ -70,6 +73,7 @@ executable mangrove-exe
     , log-store
     , mangrove
     , mtl
+    , network
     , network-simple
     , optparse-applicative
     , text
@@ -94,11 +98,14 @@ test-suite mangrove-test
     , containers
     , exceptions
     , hesp
+    , hspec
     , log-store
     , mangrove
     , mtl
+    , network
     , network-simple
     , optparse-applicative
+    , temporary
     , text
     , time
     , transformers

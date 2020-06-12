@@ -30,6 +30,7 @@ dependencies:
 - mtl
 - conduit
 - transformers
+- network
 - network-simple
 - optparse-applicative
 - hesp
@@ -59,4 +60,6 @@ tests:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
+    - hspec
     - mangrove
+    - temporary

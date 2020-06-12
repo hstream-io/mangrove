@@ -4,11 +4,13 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: d8ce49083cd01a9945e5d9fd136e2710ddae95212c1f05646ea35de12069c91d
+-- hash: aa59e463b0c620a6fad58130ed1c9b9dbeae648798487c2a15781e2045c15ed0
 
 name:           mangrove
 version:        0.0.0.0
+synopsis:       Mangrove is a database management server with some other facilities.
 description:    Please see the README on GitHub at <https://github.com/hstream-io/mangrove#readme>
+category:       Database
 homepage:       https://github.com/hstream-io/mangrove#readme
 bug-reports:    https://github.com/hstream-io/mangrove/issues
 author:         Commelina
@@ -16,6 +18,7 @@ maintainer:     maosics@gmail.com
 copyright:      2020 EMQ Technologies Co., Ltd.
 license:        BSD3
 license-file:   LICENSE
+tested-with:    GHC==8.8.3, GHC==8.8.1, GHC==8.6.5
 build-type:     Simple
 extra-source-files:
     README.md
@@ -86,10 +89,13 @@ test-suite mangrove-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      Test.StoreSpec
       Paths_mangrove
   hs-source-dirs:
       test
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-tool-depends:
+      hspec-discover:hspec-discover ==2.*
   build-depends:
       base >=4.7 && <5
     , bytestring

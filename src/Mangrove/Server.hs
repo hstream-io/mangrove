@@ -56,7 +56,7 @@ runApp env app = runReaderT (unApp app) env
 processMsg :: Socket
            -> Context
            -> Either String HESP.Message
-           -> App (Maybe RequestType)
+           -> App (Maybe ())
 processMsg sock ctx msg =
   case recvReq msg of
     Left e    -> do
@@ -66,7 +66,7 @@ processMsg sock ctx msg =
       return Nothing
     Right req -> processSPut sock ctx req .|. processSGet sock ctx req
 
-processSPut :: TCP.Socket -> Context -> RequestType -> App (Maybe RequestType)
+processSPut :: TCP.Socket -> Context -> RequestType -> App (Maybe ())
 processSPut sock ctx (SPut topic payload) = do
   Colog.logInfo $ "Writing " <> decodeUtf8 topic <> " ..."
   r <- liftIO $ Store.sput ctx topic payload
@@ -80,10 +80,10 @@ processSPut sock ctx (SPut topic payload) = do
       let resp = mkSPutResp topic entryID True
       Colog.logDebug $ T.pack ("Sending: " ++ show resp)
       HESP.sendMsg sock resp
-  return Nothing
-processSPut _ _ req = return $ Just req
+  return $ Just ()
+processSPut _ _ _ = return Nothing
 
-processSGet :: TCP.Socket -> Context -> RequestType -> App (Maybe RequestType)
+processSGet :: TCP.Socket -> Context -> RequestType -> App (Maybe ())
 processSGet sock ctx (SGet topic sid eid maxn offset) = do
   Colog.logInfo $ "Reading " <> decodeUtf8 topic <> " ..."
   -- TODO: pass Nothing if sid/eid is null
@@ -98,8 +98,8 @@ processSGet sock ctx (SGet topic sid eid maxn offset) = do
       let resp = mkSGetResp topic xs True
       Colog.logDebug $ "Sending: " <> (T.pack . show) resp
       HESP.sendMsg sock resp
-  return Nothing
-processSGet _ _ req = return $ Just req
+  return $ Just ()
+processSGet _ _ _ = return Nothing
 
 -------------------------------------------------------------------------------
 

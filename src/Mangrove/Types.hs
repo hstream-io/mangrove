@@ -14,7 +14,6 @@ module Mangrove.Types
   , Env (..)
   , App (..)
 
-  , recvReq
   , parseRequest
   , serverOpts
   ) where
@@ -23,8 +22,6 @@ import qualified Colog
 import           Control.Monad.Reader  (MonadIO, MonadReader, ReaderT)
 import           Data.ByteString       (ByteString)
 import qualified Data.ByteString.Char8 as BSC
-import qualified Data.Text             as Text
-import           Data.Text.Encoding    (encodeUtf8)
 import qualified Data.Vector           as V
 import           Data.Word             (Word64)
 import qualified Network.HESP          as HESP
@@ -68,7 +65,6 @@ parseSGet paras = do
   offset  <- extractIntegerParam    "Offset"             paras 4
   return $ SGet topic sid eid maxn offset
 
-
 parseRequest :: HESP.Message
              -> Either ByteString RequestType
 parseRequest msg = do
@@ -77,11 +73,6 @@ parseRequest msg = do
     "sput" -> parseSPut paras
     "sget" -> parseSGet paras
     _      -> Left $ "Unrecognized request " <> n <> "."
-
-recvReq :: Either String HESP.Message
-        -> Either ByteString RequestType
-recvReq (Right msg) = parseRequest msg
-recvReq (Left e)    = Left . encodeUtf8 . Text.pack $ e
 
 data ServerConfig = ServerConfig
     { serverPort :: String

@@ -23,10 +23,11 @@ import           Log.Store.Base        hiding (Env)
 import qualified Network.HESP          as HESP
 import qualified Network.Simple.TCP    as TCP
 import           Network.Socket        (Socket)
+import qualified Network.Socket        as NS
 
 import qualified Mangrove.Store        as Store
 import           Mangrove.Types        (App (..), Env (..), RequestType (..),
-                                        recvReq)
+                                        parseRequest)
 import           Mangrove.Utils        ((.|.))
 
 runServer :: Env App -> IO a
@@ -57,12 +58,17 @@ processMsg :: Socket
            -> Context
            -> Either String HESP.Message
            -> App (Maybe ())
-processMsg sock ctx msg =
-  case recvReq msg of
+processMsg sock _ (Left errmsg) = do
+  Colog.logError $ "Failed to parse message: " <> T.pack errmsg
+  HESP.sendMsg sock $ HESP.mkSimpleError "ERR" $ (encodeUtf8 . T.pack) errmsg
+  -- FIXME: should we close this connection?
+  liftIO $ NS.gracefulClose sock (10 * 1000)  -- 10 seconds
+  return Nothing
+processMsg sock ctx (Right msg) =
+  case parseRequest msg of
     Left e    -> do
+      Colog.logWarning $ decodeUtf8 e
       HESP.sendMsg sock $ HESP.mkSimpleError "ERR" e
-      -- FIXME: should we close this connection?
-      Colog.logError $ "Failed to parse message: " <> decodeUtf8 e
       return Nothing
     Right req -> processSPut sock ctx req .|. processSGet sock ctx req
 

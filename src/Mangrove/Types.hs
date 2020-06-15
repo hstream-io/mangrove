@@ -39,7 +39,7 @@ type QueryName = String
 type RequestID = ByteString
 
 data RequestType = SPut ByteString ByteString
-    | SGet ByteString Word64 Word64 Integer Integer
+    | SGet ByteString (Maybe Word64) (Maybe Word64) Integer Integer
     deriving (Show, Eq)
 
 parseSPut :: V.Vector HESP.Message
@@ -49,21 +49,21 @@ parseSPut paras = do
   payload <- extractBulkStringParam "Payload"    paras 1
   return   $ SPut topic payload
 
-validateInt :: ByteString -> ByteString -> Word64 -> Either ByteString Word64
-validateInt label s def
-  | s == ""   = Right def
+validateInt :: ByteString -> ByteString -> Either ByteString (Maybe Word64)
+validateInt label s
+  | s == ""   = Right Nothing
   | otherwise = case readMaybe (BSC.unpack s) of
       Nothing -> Left $ label <> " must be an integer."
-      Just x  -> Right x
+      Just x  -> Right (Just x)
 
 parseSGet :: V.Vector HESP.Message
           -> Either ByteString RequestType
 parseSGet paras = do
   topic   <- extractBulkStringParam "Topic"              paras 0
   sids    <- extractBulkStringParam "Start ID"           paras 1
-  sid     <- validateInt            "Start ID"           sids  0
+  sid     <- validateInt            "Start ID"           sids
   eids    <- extractBulkStringParam "End ID"             paras 2
-  eid     <- validateInt            "End ID"             eids (-1)
+  eid     <- validateInt            "End ID"             eids
   maxn    <- extractIntegerParam    "Max message number" paras 3
   offset  <- extractIntegerParam    "Offset"             paras 4
   return $ SGet topic sid eid maxn offset

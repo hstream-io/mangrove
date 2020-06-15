@@ -3,12 +3,16 @@
 module Mangrove.Store
   ( sget
   , sput
+  , sputs
   ) where
 
 import           Control.Exception      (Exception, try)
 import           Control.Monad.IO.Class (MonadIO)
 import           Control.Monad.Reader   (runReaderT)
 import           Data.ByteString        (ByteString)
+import           Data.Either            (isLeft, fromLeft, fromRight)
+import           Data.Vector            (Vector)
+import qualified Data.Vector            as V
 import           Streamly               (Serial, serially)
 import qualified Streamly.Prelude       as S
 
@@ -37,6 +41,22 @@ sput :: Exception e
      -> ByteString          -- ^ payload
      -> IO (Either e LogStore.EntryID)
 sput db topic payload = try $ appendEntry db topic payload
+
+-- | Put elements to a stream.
+--
+-- If SomeException happens, the rest elements are ignored.
+sputs :: Exception e
+      => LogStore.Context    -- ^ db context
+      -> ByteString          -- ^ topic
+      -> Vector ByteString   -- ^ payloads
+      -> IO (Either (Vector LogStore.EntryID, e) (Vector LogStore.EntryID))
+sputs db topic payloads = do
+  rs <- V.mapM (sput db topic) payloads
+  case V.findIndex isLeft rs of
+    Just i  ->
+      let xs = V.unsafeSlice 0 i rs
+       in return $ Left (V.map fromRight' xs, fromLeft'(V.unsafeIndex rs i))
+    Nothing -> return $ Right $ V.map fromRight' rs
 
 -------------------------------------------------------------------------------
 -- Log-store
@@ -75,3 +95,11 @@ appendEntry db topic payload = runReaderT f db
     wopts = LogStore.defaultOpenOptions { LogStore.writeMode       = True
                                         , LogStore.createIfMissing = True
                                         }
+
+-------------------------------------------------------------------------------
+
+fromLeft' :: Either a b -> a
+fromLeft' = fromLeft (error "this should never happen")
+
+fromRight' :: Either a b -> b
+fromRight' = fromRight (error "this should never happen")

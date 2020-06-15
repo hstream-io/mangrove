@@ -1,0 +1,16 @@
+packages: ./*.cabal
+
+source-repository-package
+  type: git
+  location: https://github.com/hstream-io/hesp.git
+  tag: 187a4850170503264f684021b77b8f762c443647
+
+source-repository-package
+  type: git
+  location: https://github.com/daleiz/log-store
+  tag: 4cfb66be7102732c2702709cbca77723720632e8
+
+source-repository-package
+  type: git
+  location: https://github.com/daleiz/rocksdb-haskell
+  tag: 109af08f95b40f458d4933e3725ecb3e59337c39

@@ -1,119 +1,89 @@
-cabal-version: 1.12
-
--- This file has been generated from package.yaml by hpack version 0.33.0.
---
--- see: https://github.com/sol/hpack
---
--- hash: aa59e463b0c620a6fad58130ed1c9b9dbeae648798487c2a15781e2045c15ed0
-
-name:           mangrove
-version:        0.0.0.0
-synopsis:       Mangrove is a database management server with some other facilities.
-description:    Please see the README on GitHub at <https://github.com/hstream-io/mangrove#readme>
-category:       Database
-homepage:       https://github.com/hstream-io/mangrove#readme
-bug-reports:    https://github.com/hstream-io/mangrove/issues
-author:         Commelina
-maintainer:     maosics@gmail.com
-copyright:      2020 EMQ Technologies Co., Ltd.
-license:        BSD3
-license-file:   LICENSE
-tested-with:    GHC==8.8.3, GHC==8.8.1, GHC==8.6.5
-build-type:     Simple
-extra-source-files:
-    README.md
-    ChangeLog.md
+cabal-version:      2.2
+name:               mangrove
+version:            0.0.0.0
+synopsis:           Mangrove is a database management server with some other facilities.
+description:        Please see the README on GitHub at
+                    <https://github.com/hstream-io/mangrove#readme>
+license:            BSD-3-Clause
+license-file:       LICENSE
+copyright:          2020 EMQ Technologies Co., Ltd.
+author:             Commelina
+maintainer:         maosics@gmail.com
+tested-with:        GHC == 8.8.3, GHC == 8.8.1, GHC == 8.6.5
+category:           Database
+homepage:           https://github.com/hstream-io/mangrove#readme
+bug-reports:        https://github.com/hstream-io/mangrove/issues
+build-type:         Simple
+extra-source-files: README.md
+                    ChangeLog.md
 
 source-repository head
-  type: git
+  type:     git
   location: https://github.com/hstream-io/mangrove
 
 library
-  exposed-modules:
-      Mangrove
-      Mangrove.Server
-      Mangrove.Store
-      Mangrove.Types
-      Mangrove.Utils
-  other-modules:
-      Paths_mangrove
-  hs-source-dirs:
-      src
-  build-depends:
-      base >=4.7 && <5
-    , bytestring
-    , co-log
-    , conduit
-    , containers
-    , exceptions
-    , hesp
-    , log-store
-    , mtl
-    , network
-    , network-simple
-    , optparse-applicative
-    , text
-    , time
-    , transformers
-    , vector
+  exposed-modules:  Mangrove
+                    Mangrove.Server
+                    Mangrove.Store
+                    Mangrove.Types
+                    Mangrove.Utils
+  hs-source-dirs:   src
+  build-depends:    base                 >= 4.7 && < 5
+                  , bytestring
+                  , co-log
+                  , conduit
+                  , containers
+                  , exceptions
+                  , hesp
+                  , log-store
+                  , mtl
+                  , network
+                  , network-simple
+                  , optparse-applicative
+                  , text
+                  , time
+                  , transformers
+                  , vector
   default-language: Haskell2010
 
 executable mangrove-exe
-  main-is: Main.hs
-  other-modules:
-      Paths_mangrove
-  hs-source-dirs:
-      app
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N
-  build-depends:
-      base >=4.7 && <5
-    , bytestring
-    , co-log
-    , conduit
-    , containers
-    , exceptions
-    , hesp
-    , log-store
-    , mangrove
-    , mtl
-    , network
-    , network-simple
-    , optparse-applicative
-    , text
-    , time
-    , transformers
-    , vector
+  main-is:          Main.hs
+  hs-source-dirs:   app
+  build-depends:    base                 >= 4.7 && < 5
+                  , bytestring
+                  , co-log
+                  , conduit
+                  , containers
+                  , exceptions
+                  , hesp
+                  , log-store
+                  , mangrove
+                  , mtl
+                  , network
+                  , network-simple
+                  , optparse-applicative
+                  , text
+                  , time
+                  , transformers
+                  , vector
   default-language: Haskell2010
+  ghc-options:      -threaded -rtsopts -with-rtsopts=-N
 
 test-suite mangrove-test
-  type: exitcode-stdio-1.0
-  main-is: Spec.hs
-  other-modules:
-      Test.StoreSpec
-      Paths_mangrove
-  hs-source-dirs:
-      test
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N
-  build-tool-depends:
-      hspec-discover:hspec-discover ==2.*
-  build-depends:
-      base >=4.7 && <5
-    , bytestring
-    , co-log
-    , conduit
-    , containers
-    , exceptions
-    , hesp
-    , hspec
-    , log-store
-    , mangrove
-    , mtl
-    , network
-    , network-simple
-    , optparse-applicative
-    , temporary
-    , text
-    , time
-    , transformers
-    , vector
-  default-language: Haskell2010
+  type:               exitcode-stdio-1.0
+  main-is:            Spec.hs
+  other-modules:      Test.StoreSpec
+  hs-source-dirs:     test
+  build-depends:      base       >= 4.7 && < 5
+                    , bytestring
+                    , hspec
+                    , log-store
+                    , mangrove
+                    , mtl
+                    , network
+                    , temporary
+                    , text
+                    , time
+  default-language:   Haskell2010
+  build-tool-depends: hspec-discover:hspec-discover == 2.*
+  ghc-options:        -threaded -rtsopts -with-rtsopts=-N

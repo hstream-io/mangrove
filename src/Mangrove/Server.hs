@@ -86,8 +86,7 @@ processSPut _ _ _ = return Nothing
 processSGet :: TCP.Socket -> Context -> RequestType -> App (Maybe ())
 processSGet sock ctx (SGet topic sid eid maxn offset) = do
   Colog.logInfo $ "Reading " <> decodeUtf8 topic <> " ..."
-  -- TODO: pass Nothing if sid/eid is null
-  r <- liftIO $ Store.sget ctx topic (Just sid) (Just eid) offset maxn
+  r <- liftIO $ Store.sget ctx topic sid eid offset maxn
   case r of
     Left errmsg -> do
       Colog.logError $ "Database error: " <> T.pack errmsg

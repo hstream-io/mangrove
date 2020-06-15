@@ -34,8 +34,7 @@ import qualified Data.Vector            as V
 import           Data.Word              (Word64)
 import           GHC.Generics           (Generic)
 import qualified Network.HESP           as HESP
-import           Network.HESP.Commands  (commandParser, extractBulkStringParam,
-                                         extractIntegerParam)
+import qualified Network.HESP.Commands  as HESP
 import qualified Network.Socket         as NS
 import           Text.Read              (readMaybe)
 
@@ -107,16 +106,46 @@ level action = \case
 type QueryName = String
 type RequestID = ByteString
 
-data RequestType = SPut ByteString ByteString
-    | SGet ByteString (Maybe Word64) (Maybe Word64) Integer Integer
-    deriving (Show, Eq)
+data RequestType
+  = SPut ByteString ByteString
+  | SPuts ByteString (V.Vector ByteString)
+  | SGet ByteString (Maybe Word64) (Maybe Word64) Integer Integer
+  deriving (Show, Eq)
+
+parseRequest :: HESP.Message
+             -> Either ByteString RequestType
+parseRequest msg = do
+  (n, paras) <- HESP.commandParser msg
+  case n of
+    "sput" -> parseSPuts paras <> parseSPut paras
+    "sget" -> parseSGet paras
+    _      -> Left $ "Unrecognized request " <> n <> "."
 
 parseSPut :: V.Vector HESP.Message
           -> Either ByteString RequestType
 parseSPut paras = do
-  topic   <- extractBulkStringParam "Topic"      paras 0
-  payload <- extractBulkStringParam "Payload"    paras 1
+  topic   <- HESP.extractBulkStringParam "Topic"   paras 0
+  payload <- HESP.extractBulkStringParam "Payload" paras 1
   return   $ SPut topic payload
+
+parseSPuts :: V.Vector HESP.Message
+           -> Either ByteString RequestType
+parseSPuts paras = do
+  topic    <- HESP.extractBulkStringParam      "Topic"   paras 0
+  payloads <- HESP.extractBulkStringArrayParam "Payload" paras 1
+  return $ SPuts topic payloads
+
+parseSGet :: V.Vector HESP.Message
+          -> Either ByteString RequestType
+parseSGet paras = do
+  topic   <- HESP.extractBulkStringParam "Topic"              paras 0
+  sids    <- HESP.extractBulkStringParam "Start ID"           paras 1
+  sid     <- validateInt                 "Start ID"           sids
+  eids    <- HESP.extractBulkStringParam "End ID"             paras 2
+  eid     <- validateInt                 "End ID"             eids
+  maxn    <- HESP.extractIntegerParam    "Max message number" paras 3
+  offset  <- HESP.extractIntegerParam    "Offset"             paras 4
+  return $ SGet topic sid eid maxn offset
 
 validateInt :: ByteString -> ByteString -> Either ByteString (Maybe Word64)
 validateInt label s
@@ -124,24 +153,3 @@ validateInt label s
   | otherwise = case readMaybe (BSC.unpack s) of
       Nothing -> Left $ label <> " must be an integer."
       Just x  -> Right (Just x)
-
-parseSGet :: V.Vector HESP.Message
-          -> Either ByteString RequestType
-parseSGet paras = do
-  topic   <- extractBulkStringParam "Topic"              paras 0
-  sids    <- extractBulkStringParam "Start ID"           paras 1
-  sid     <- validateInt            "Start ID"           sids
-  eids    <- extractBulkStringParam "End ID"             paras 2
-  eid     <- validateInt            "End ID"             eids
-  maxn    <- extractIntegerParam    "Max message number" paras 3
-  offset  <- extractIntegerParam    "Offset"             paras 4
-  return $ SGet topic sid eid maxn offset
-
-parseRequest :: HESP.Message
-             -> Either ByteString RequestType
-parseRequest msg = do
-  (n, paras) <- commandParser msg
-  case n of
-    "sput" -> parseSPut paras
-    "sget" -> parseSGet paras
-    _      -> Left $ "Unrecognized request " <> n <> "."

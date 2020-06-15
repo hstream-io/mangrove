@@ -11,6 +11,7 @@ import           Data.ByteString       (ByteString)
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.Text             as T
 import           Data.Text.Encoding    (decodeUtf8, encodeUtf8)
+import qualified Data.Vector           as V
 import           Data.Word             (Word64)
 import           Log.Store.Base        hiding (Env)
 import qualified Network.HESP          as HESP
@@ -41,7 +42,9 @@ processMsg sock ctx (Right msg) =
       Colog.logWarning $ decodeUtf8 e
       HESP.sendMsg sock $ HESP.mkSimpleError "ERR" e
       return Nothing
-    Right req -> processSPut sock ctx req .|. processSGet sock ctx req
+    Right req -> processSPut  sock ctx req
+             .|. processSPuts sock ctx req
+             .|. processSGet  sock ctx req
 
 -------------------------------------------------------------------------------
 -- Process client requests
@@ -62,6 +65,25 @@ processSPut sock ctx (SPut topic payload) = do
       HESP.sendMsg sock resp
   return $ Just ()
 processSPut _ _ _ = return Nothing
+
+processSPuts :: TCP.Socket -> Context -> RequestType -> App (Maybe ())
+processSPuts sock ctx (SPuts topic payloads) = do
+  Colog.logInfo $ "Writing " <> decodeUtf8 topic <> " ..."
+  r <- liftIO $ Store.sputs ctx topic payloads
+  case r of
+    Left (entryIDs, e) -> do
+      Colog.logException (e :: SomeException)
+      let succIds = V.map (\x -> mkSPutResp topic x True) entryIDs
+          errResp = mkSPutResp topic 0 False
+      let resps = V.snoc succIds errResp
+      Colog.logDebug $ T.pack ("Sending: " ++ show resps)
+      HESP.sendMsgs sock resps
+    Right entryIDs     -> do
+      let resps = V.map (\x -> mkSPutResp topic x True) entryIDs
+      Colog.logDebug $ T.pack ("Sending: " ++ show resps)
+      HESP.sendMsgs sock resps
+  return $ Just ()
+processSPuts _ _ _ = return Nothing
 
 processSGet :: TCP.Socket -> Context -> RequestType -> App (Maybe ())
 processSGet sock ctx (SGet topic sid eid maxn offset) = do

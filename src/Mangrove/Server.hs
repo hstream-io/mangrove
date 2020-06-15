@@ -70,7 +70,9 @@ processMsg sock ctx (Right msg) =
       Colog.logWarning $ decodeUtf8 e
       HESP.sendMsg sock $ HESP.mkSimpleError "ERR" e
       return Nothing
-    Right req -> processSPut sock ctx req .|. processSGet sock ctx req
+    Right req -> processSPut  sock ctx req
+             .|. processSPuts sock ctx req
+             .|. processSGet  sock ctx req
 
 processSPut :: TCP.Socket -> Context -> RequestType -> App (Maybe ())
 processSPut sock ctx (SPut topic payload) = do
@@ -88,6 +90,23 @@ processSPut sock ctx (SPut topic payload) = do
       HESP.sendMsg sock resp
   return $ Just ()
 processSPut _ _ _ = return Nothing
+
+processSPuts :: TCP.Socket -> Context -> RequestType -> App (Maybe ())
+processSPuts sock ctx (SPuts topic payloads) = do
+  Colog.logInfo $ "Writing " <> decodeUtf8 topic <> " ..."
+  rs <- liftIO $ mapM (Store.sput ctx topic) payloads
+  case sequence rs of
+    Left errmsg    -> do
+      Colog.logError $ "Database error: " <> T.pack errmsg
+      let resp = mkSPutsResp topic (V.singleton 0) False
+      Colog.logDebug $ T.pack ("Sending: " ++ show resp)
+      HESP.sendMsg sock resp
+    Right entryIDs -> do
+      let resp = mkSPutsResp topic entryIDs True
+      Colog.logDebug $ T.pack ("Sending: " ++ show resp)
+      HESP.sendMsg sock resp
+  return $ Just ()
+processSPuts _ _ _ = return Nothing
 
 processSGet :: TCP.Socket -> Context -> RequestType -> App (Maybe ())
 processSGet sock ctx (SGet topic sid eid maxn offset) = do
@@ -120,6 +139,20 @@ mkSPutResp topic entryID res =
                                 , HESP.mkBulkString status
                                 , HESP.mkBulkString fin
                                 ]
+
+mkSPutsResp :: ByteString
+            -> V.Vector Word64
+            -> Bool
+            -> HESP.Message
+mkSPutsResp topic entryIDs res =
+  let status = if res then "OK" else "ERR"
+      fin    = if res then HESP.mkArray
+                           $ (HESP.mkBulkString . encodeUtf8 . T.pack . show) <$> entryIDs
+                      else HESP.mkBulkString "Message storing failed."
+   in HESP.mkPushFromList "sput" [ HESP.mkBulkString topic
+                                 , HESP.mkBulkString status
+                                 , fin
+                                 ]
 
 mkSGetResp :: ByteString
            -> [(ByteString, Word64)]

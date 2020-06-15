@@ -26,7 +26,7 @@ import qualified Data.Vector           as V
 import           Data.Word             (Word64)
 import qualified Network.HESP          as HESP
 import           Network.HESP.Commands (commandParser, extractBulkStringParam,
-                                        extractIntegerParam)
+                                        extractIntegerParam, extractBulkStringArrayParam)
 import           Options.Applicative   (Parser, ParserInfo, fullDesc, header,
                                         help, helper, info, long, metavar,
                                         progDesc, short, strOption, (<**>))
@@ -35,9 +35,11 @@ import           Text.Read             (readMaybe)
 type QueryName = String
 type RequestID = ByteString
 
-data RequestType = SPut ByteString ByteString
-    | SGet ByteString (Maybe Word64) (Maybe Word64) Integer Integer
-    deriving (Show, Eq)
+data RequestType
+  = SPut ByteString ByteString
+  | SPuts ByteString (V.Vector ByteString)
+  | SGet ByteString (Maybe Word64) (Maybe Word64) Integer Integer
+  deriving (Show, Eq)
 
 parseSPut :: V.Vector HESP.Message
           -> Either ByteString RequestType
@@ -45,6 +47,13 @@ parseSPut paras = do
   topic   <- extractBulkStringParam "Topic"      paras 0
   payload <- extractBulkStringParam "Payload"    paras 1
   return   $ SPut topic payload
+
+parseSPuts :: V.Vector HESP.Message
+           -> Either ByteString RequestType
+parseSPuts paras = do
+  topic    <- extractBulkStringParam      "Topic"   paras 0
+  payloads <- extractBulkStringArrayParam "Payload" paras 1
+  return $ SPuts topic payloads
 
 validateInt :: ByteString -> ByteString -> Either ByteString (Maybe Word64)
 validateInt label s
@@ -70,7 +79,7 @@ parseRequest :: HESP.Message
 parseRequest msg = do
   (n, paras) <- commandParser msg
   case n of
-    "sput" -> parseSPut paras
+    "sput" -> parseSPut paras <> parseSPuts paras
     "sget" -> parseSGet paras
     _      -> Left $ "Unrecognized request " <> n <> "."
 

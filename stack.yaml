@@ -11,4 +11,4 @@ extra-deps:
     commit: 109af08f95b40f458d4933e3725ecb3e59337c39
 
   - git: https://github.com/hstream-io/hesp.git
-    commit: 187a4850170503264f684021b77b8f762c443647
+    commit: c817b86aec651e3e1dfcda33e8e7220e94e29033

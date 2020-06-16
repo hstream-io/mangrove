@@ -6,18 +6,15 @@
 {-# LANGUAGE RecordWildCards       #-}
 
 module Mangrove.Server
-  ( runServer
+  ( processMsg
   ) where
 
 import qualified Colog
-import           Control.Exception     (bracket)
-import           Control.Monad         (unless)
-import           Control.Monad.Reader  (liftIO, runReaderT)
+import           Control.Monad.Reader  (liftIO)
 import           Data.ByteString       (ByteString)
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.Text             as T
 import           Data.Text.Encoding    (decodeUtf8, encodeUtf8)
-import qualified Data.Vector           as V
 import           Data.Word             (Word64)
 import           Log.Store.Base        hiding (Env)
 import qualified Network.HESP          as HESP
@@ -26,34 +23,12 @@ import           Network.Socket        (Socket)
 import qualified Network.Socket        as NS
 
 import qualified Mangrove.Store        as Store
-import           Mangrove.Types        (App (..), Env (..), RequestType (..),
-                                        parseRequest)
+import           Mangrove.Types        (App, RequestType (..), parseRequest)
 import           Mangrove.Utils        ((.|.))
-
-runServer :: Env App -> IO a
-runServer env@Env{..} =
-    bracket
-      (initialize $ UserDefinedEnv (Config envDBPath))
-      (runReaderT shutDown)
-      serverProcess
-  where
-    serverProcess ctx =
-      TCP.serve (TCP.Host "0.0.0.0") envPort $ \(sock, _) ->
-        runApp env $ go sock ctx
-    go :: Socket -> Context -> App ()
-    go sock ctx = do
-      msgs' <- HESP.recvMsgs sock 1024
-      unless (V.null msgs')
-        (do Colog.logDebug $ "Received: " <> T.pack (show msgs')
-            mapM_ (processMsg sock ctx) msgs'
-            go sock ctx
-        )
-
-runApp :: Env App -> App a -> IO a
-runApp env app = runReaderT (unApp app) env
 
 -------------------------------------------------------------------------------
 
+-- | Parse one client request and then send one response to client.
 processMsg :: Socket
            -> Context
            -> Either String HESP.Message
@@ -71,6 +46,9 @@ processMsg sock ctx (Right msg) =
       HESP.sendMsg sock $ HESP.mkSimpleError "ERR" e
       return Nothing
     Right req -> processSPut sock ctx req .|. processSGet sock ctx req
+
+-------------------------------------------------------------------------------
+-- Process client requests
 
 processSPut :: TCP.Socket -> Context -> RequestType -> App (Maybe ())
 processSPut sock ctx (SPut topic payload) = do
@@ -107,6 +85,7 @@ processSGet sock ctx (SGet topic sid eid maxn offset) = do
 processSGet _ _ _ = return Nothing
 
 -------------------------------------------------------------------------------
+-- Messages send to client
 
 mkSPutResp :: ByteString
            -> Word64

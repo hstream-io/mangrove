@@ -11,7 +11,7 @@ author:             Commelina
 maintainer:         maosics@gmail.com
 tested-with:        GHC == 8.8.3, GHC == 8.8.1, GHC == 8.6.5
 category:           Database
-homepage:           https://github.com/hstream-io/mangrove#readme
+homepage:           https://github.com/hstream-io/mangrove
 bug-reports:        https://github.com/hstream-io/mangrove/issues
 build-type:         Simple
 extra-source-files: README.md
@@ -23,12 +23,13 @@ source-repository head
 
 library
   exposed-modules:  Mangrove
-                    Mangrove.Server
                     Mangrove.Store
-                    Mangrove.Types
                     Mangrove.Utils
+  other-modules:    Mangrove.Server
+                    Mangrove.Types
   hs-source-dirs:   src
-  build-depends:    base                 >= 4.7 && < 5
+  build-depends:    base           >= 4.9 && < 5
+                  , aeson          >= 1.0
                   , bytestring
                   , co-log
                   , conduit
@@ -39,17 +40,19 @@ library
                   , mtl
                   , network
                   , network-simple
-                  , optparse-applicative
                   , text
                   , time
                   , transformers
                   , vector
   default-language: Haskell2010
+  ghc-options:      -Wall -Wcompat -Widentities -Wincomplete-record-updates
+                    -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints
 
-executable mangrove-exe
+executable mangrove
   main-is:          Main.hs
   hs-source-dirs:   app
-  build-depends:    base                 >= 4.7 && < 5
+  build-depends:    base           >= 4.9 && < 5
+                  , aeson          >= 1.0
                   , bytestring
                   , co-log
                   , conduit
@@ -61,20 +64,22 @@ executable mangrove-exe
                   , mtl
                   , network
                   , network-simple
-                  , optparse-applicative
                   , text
                   , time
                   , transformers
                   , vector
+                  , yaml           >= 0.11
   default-language: Haskell2010
-  ghc-options:      -threaded -rtsopts -with-rtsopts=-N
+  ghc-options:      -Wall -Wcompat -Widentities -Wincomplete-record-updates
+                    -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints
+                    -threaded -rtsopts -with-rtsopts=-N
 
 test-suite mangrove-test
   type:               exitcode-stdio-1.0
   main-is:            Spec.hs
   other-modules:      Test.StoreSpec
   hs-source-dirs:     test
-  build-depends:      base       >= 4.7 && < 5
+  build-depends:      base       >= 4.9 && < 5
                     , bytestring
                     , hspec
                     , log-store
@@ -86,4 +91,6 @@ test-suite mangrove-test
                     , time
   default-language:   Haskell2010
   build-tool-depends: hspec-discover:hspec-discover == 2.*
-  ghc-options:        -threaded -rtsopts -with-rtsopts=-N
+  ghc-options:        -Wall -Wcompat -Widentities -Wincomplete-record-updates
+                      -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints
+                      -threaded -rtsopts -with-rtsopts=-N

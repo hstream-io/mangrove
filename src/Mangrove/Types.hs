@@ -1,36 +1,109 @@
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE InstanceSigs               #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RecordWildCards            #-}
 
 module Mangrove.Types
-  ( QueryName
+  ( Env (..)
+  , App
+  , runApp
+
+  , QueryName
   , RequestID
   , RequestType (..)
-  , ServerConfig (..)
-  , Env (..)
-  , App (..)
-
   , parseRequest
-  , serverOpts
   ) where
 
 import qualified Colog
-import           Control.Monad.Reader  (MonadIO, MonadReader, ReaderT)
-import           Data.ByteString       (ByteString)
-import qualified Data.ByteString.Char8 as BSC
-import qualified Data.Vector           as V
-import           Data.Word             (Word64)
-import qualified Network.HESP          as HESP
-import           Network.HESP.Commands (commandParser, extractBulkStringParam,
-                                        extractIntegerParam)
-import           Options.Applicative   (Parser, ParserInfo, fullDesc, header,
-                                        help, helper, info, long, metavar,
-                                        progDesc, short, strOption, (<**>))
-import           Text.Read             (readMaybe)
+import           Control.Applicative    ((<|>))
+import           Control.Monad.IO.Class (MonadIO)
+import           Control.Monad.Reader   (MonadReader, ReaderT, runReaderT)
+import           Data.Aeson             (FromJSON (..), (.:))
+import qualified Data.Aeson             as Aeson
+import qualified Data.Aeson.Types       as Aeson
+import           Data.ByteString        (ByteString)
+import qualified Data.ByteString.Char8  as BSC
+import           Data.Text              (Text)
+import qualified Data.Vector            as V
+import           Data.Word              (Word64)
+import           GHC.Generics           (Generic)
+import qualified Network.HESP           as HESP
+import           Network.HESP.Commands  (commandParser, extractBulkStringParam,
+                                         extractIntegerParam)
+import qualified Network.Socket         as NS
+import           Text.Read              (readMaybe)
+
+-------------------------------------------------------------------------------
+
+data Env m =
+  Env { serverHost    :: !NS.HostName
+      , serverPort    :: !Int
+      , dbPath        :: !String
+      , loggerSetting :: !(LoggerSetting m)
+      }
+  deriving (Generic, FromJSON)
+
+newtype LoggerSetting m =
+  LoggerSetting { logAction :: Colog.LogAction m Colog.Message }
+
+instance MonadIO m => FromJSON (LoggerSetting m) where
+  parseJSON v = Aeson.withObject "logger"        customMode v
+            <|> Aeson.withText   "simple-logger" simpleMode v
+
+instance Colog.HasLog (Env m) Colog.Message m where
+  getLogAction :: Env m -> Colog.LogAction m Colog.Message
+  getLogAction = logAction . loggerSetting
+  {-# INLINE getLogAction #-}
+
+  setLogAction :: Colog.LogAction m Colog.Message -> Env m -> Env m
+  setLogAction new env = env { loggerSetting = LoggerSetting new }
+  {-# INLINE setLogAction #-}
+
+newtype App a = App { unApp :: ReaderT (Env App) IO a }
+  deriving newtype (Functor, Applicative, Monad, MonadIO, MonadReader (Env App))
+
+runApp :: Env App -> App a -> IO a
+runApp env app = runReaderT (unApp app) env
+
+-------------------------------------------------------------------------------
+-- Logger Settings
+
+simpleMode :: MonadIO m => Text -> Aeson.Parser (LoggerSetting m)
+simpleMode fmt = LoggerSetting <$> formatter fmt
+
+customMode :: MonadIO m => Aeson.Object -> Aeson.Parser (LoggerSetting m)
+customMode obj = do
+  fmt <- obj .: "formatter" :: Aeson.Parser Text
+  lvl <- obj .: "level"     :: Aeson.Parser Text
+  action <- formatter fmt
+  LoggerSetting <$> level action lvl
+
+formatter :: MonadIO m => Text -> Aeson.Parser (Colog.LogAction m Colog.Message)
+formatter "rich"   = return Colog.richMessageAction
+formatter "simple" = return Colog.simpleMessageAction
+formatter _        = fail "Invalid logger formatter"
+
+level :: MonadIO m
+      => Colog.LogAction m Colog.Message
+      -> Text
+      -> Aeson.Parser (Colog.LogAction m Colog.Message)
+level action = \case
+  "debug"   -> return $ Colog.filterBySeverity Colog.D sev action
+  "info"    -> return $ Colog.filterBySeverity Colog.I sev action
+  "warning" -> return $ Colog.filterBySeverity Colog.W sev action
+  "error"   -> return $ Colog.filterBySeverity Colog.E sev action
+  _         -> fail "Invalid logger level"
+  where sev Colog.Msg{..} = msgSeverity
+
+-------------------------------------------------------------------------------
+-- Parse client requests
 
 type QueryName = String
 type RequestID = ByteString
@@ -73,47 +146,3 @@ parseRequest msg = do
     "sput" -> parseSPut paras
     "sget" -> parseSGet paras
     _      -> Left $ "Unrecognized request " <> n <> "."
-
-data ServerConfig = ServerConfig
-    { serverPort :: String
-    , dbPath     :: String
-    }
-    deriving (Show, Eq)
-
-serverConfigP :: Parser ServerConfig
-serverConfigP = ServerConfig
-             <$> strOption
-                 ( long "port"
-                <> short 'p'
-                <> metavar "PORT"
-                <> help "Port that the server listening on" )
-             <*> strOption
-                 ( long "db-path"
-                <> short 'd'
-                <> metavar "DB-PATH"
-                <> help "Path to the database on the disk" )
-
-serverOpts :: ParserInfo ServerConfig
-serverOpts = info (serverConfigP <**> helper)
-  ( fullDesc
- <> progDesc "Process requests of database options"
- <> header "log-store-server - a simple database management server" )
-
-data Env m = Env
-    { envPort      :: !String
-    , envDBPath    :: !String
-    , envLogAction :: !(Colog.LogAction m Colog.Message)
-    }
-
-instance Colog.HasLog (Env m) Colog.Message m where
-  getLogAction :: Env m -> Colog.LogAction m Colog.Message
-  getLogAction = envLogAction
-  {-# INLINE getLogAction #-}
-
-  setLogAction :: Colog.LogAction m Colog.Message -> Env m -> Env m
-  setLogAction newLogAction env = env { envLogAction = newLogAction }
-  {-# INLINE setLogAction #-}
-
-newtype App a = App
-  { unApp :: ReaderT (Env App) IO a
-  } deriving newtype (Functor, Applicative, Monad, MonadIO, MonadReader (Env App))

@@ -1,0 +1,12 @@
+# Host that the server listening on
+serverHost: localhost
+
+# Port that the server listening on
+serverPort: 20202
+
+# Path to the database on the disk
+dbPath: /tmp/db-test
+
+loggerSetting:
+  formatter: rich   # rich or simple
+  level: info

@@ -1,4 +1,6 @@
-Copyright Author name here (c) 2020
+BSD 3-Clause License
+
+Copyright (c) 2020 EMQ Technologies Co., Ltd.
 
 All rights reserved.
 
@@ -13,7 +15,7 @@ modification, are permitted provided that the following conditions are met:
       disclaimer in the documentation and/or other materials provided
       with the distribution.
 
-    * Neither the name of Author name here nor the names of other
+    * Neither the name of EMQ or the names of other
       contributors may be used to endorse or promote products derived
       from this software without specific prior written permission.
 

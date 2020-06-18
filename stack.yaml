@@ -4,11 +4,10 @@ packages:
   - .
 
 extra-deps:
-  - git: https://github.com/daleiz/log-store
-    commit: 4cfb66be7102732c2702709cbca77723720632e8
-
-  - git: https://github.com/daleiz/rocksdb-haskell
-    commit: 109af08f95b40f458d4933e3725ecb3e59337c39
+  - git: https://github.com/hstream-io/log-store
+    commit: 1e427d354847273b637266936fda2e69ee415e45
+  - git: https://github.com/hstream-io/haskell-rocksdb-bindings
+    commit: e62ed5d0f4d9eedd56ae01c49185a06465ba3eb3
 
   - git: https://github.com/hstream-io/hesp.git
     commit: 187a4850170503264f684021b77b8f762c443647

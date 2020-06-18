@@ -1,10 +1,11 @@
-{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Mangrove.Server
   ( processMsg
   ) where
 
 import qualified Colog
+import           Control.Exception     (SomeException)
 import           Control.Monad.Reader  (liftIO)
 import           Data.ByteString       (ByteString)
 import qualified Data.ByteString.Char8 as BSC
@@ -50,8 +51,8 @@ processSPut sock ctx (SPut topic payload) = do
   Colog.logInfo $ "Writing " <> decodeUtf8 topic <> " ..."
   r <- liftIO $ Store.sput ctx topic payload
   case r of
-    Left errmsg   -> do
-      Colog.logError $ "Database error: " <> T.pack errmsg
+    Left e        -> do
+      Colog.logException (e :: SomeException)
       let resp = mkSPutResp topic 0 False
       Colog.logDebug $ T.pack ("Sending: " ++ show resp)
       HESP.sendMsg sock resp
@@ -67,12 +68,12 @@ processSGet sock ctx (SGet topic sid eid maxn offset) = do
   Colog.logInfo $ "Reading " <> decodeUtf8 topic <> " ..."
   r <- liftIO $ Store.sget ctx topic sid eid offset maxn
   case r of
-    Left errmsg -> do
-      Colog.logError $ "Database error: " <> T.pack errmsg
+    Left e   -> do
+      Colog.logException (e :: SomeException)
       let resp = mkSGetResp topic [] False
       Colog.logDebug $ "Sending: " <> (T.pack . show) resp
       HESP.sendMsg sock resp
-    Right xs    -> do
+    Right xs -> do
       let resp = mkSGetResp topic xs True
       Colog.logDebug $ "Sending: " <> (T.pack . show) resp
       HESP.sendMsg sock resp

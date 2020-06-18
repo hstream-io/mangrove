@@ -93,20 +93,20 @@ install:
   - echo 'package mangrove' >> cabal.project
   - "echo '  ghc-options: -Werror=missing-methods' >> cabal.project"
   - |
-    echo "source-repository-package"                             >> cabal.project
-    echo "  type:     git"                                       >> cabal.project
-    echo "  location: https://github.com/hstream-io/hesp.git"    >> cabal.project
-    echo "  tag:      187a4850170503264f684021b77b8f762c443647"  >> cabal.project
-    echo ""                                                      >> cabal.project
-    echo "source-repository-package"                             >> cabal.project
-    echo "  type:     git"                                       >> cabal.project
-    echo "  location: https://github.com/daleiz/log-store"       >> cabal.project
-    echo "  tag:      4cfb66be7102732c2702709cbca77723720632e8"  >> cabal.project
-    echo ""                                                      >> cabal.project
-    echo "source-repository-package"                             >> cabal.project
-    echo "  type:     git"                                       >> cabal.project
-    echo "  location: https://github.com/daleiz/rocksdb-haskell" >> cabal.project
-    echo "  tag:      109af08f95b40f458d4933e3725ecb3e59337c39"  >> cabal.project
+    echo "source-repository-package"                                          >> cabal.project
+    echo "  type:     git"                                                    >> cabal.project
+    echo "  location: https://github.com/hstream-io/hesp.git"                 >> cabal.project
+    echo "  tag:      187a4850170503264f684021b77b8f762c443647"               >> cabal.project
+    echo ""                                                                   >> cabal.project
+    echo "source-repository-package"                                          >> cabal.project
+    echo "  type:     git"                                                    >> cabal.project
+    echo "  location: https://github.com/hstream-io/log-store"                >> cabal.project
+    echo "  tag:      1e427d354847273b637266936fda2e69ee415e45"               >> cabal.project
+    echo ""                                                                   >> cabal.project
+    echo "source-repository-package"                                          >> cabal.project
+    echo "  type:     git"                                                    >> cabal.project
+    echo "  location: https://github.com/hstream-io/haskell-rocksdb-bindings" >> cabal.project
+    echo "  tag:      e62ed5d0f4d9eedd56ae01c49185a06465ba3eb3"               >> cabal.project
   - "for pkg in $($HCPKG list --simple-output); do echo $pkg | sed 's/-[^-]*$//' | (grep -vE -- '^(mangrove)$' || true) | sed 's/^/constraints: /' | sed 's/$/ installed/' >> cabal.project.local; done"
   - cat cabal.project || true
   - cat cabal.project.local || true
@@ -134,20 +134,20 @@ script:
   - echo 'package mangrove' >> cabal.project
   - "echo '  ghc-options: -Werror=missing-methods' >> cabal.project"
   - |
-    echo "source-repository-package"                             >> cabal.project
-    echo "  type:     git"                                       >> cabal.project
-    echo "  location: https://github.com/hstream-io/hesp.git"    >> cabal.project
-    echo "  tag:      187a4850170503264f684021b77b8f762c443647"  >> cabal.project
-    echo ""                                                      >> cabal.project
-    echo "source-repository-package"                             >> cabal.project
-    echo "  type:     git"                                       >> cabal.project
-    echo "  location: https://github.com/daleiz/log-store"       >> cabal.project
-    echo "  tag:      4cfb66be7102732c2702709cbca77723720632e8"  >> cabal.project
-    echo ""                                                      >> cabal.project
-    echo "source-repository-package"                             >> cabal.project
-    echo "  type:     git"                                       >> cabal.project
-    echo "  location: https://github.com/daleiz/rocksdb-haskell" >> cabal.project
-    echo "  tag:      109af08f95b40f458d4933e3725ecb3e59337c39"  >> cabal.project
+    echo "source-repository-package"                                          >> cabal.project
+    echo "  type:     git"                                                    >> cabal.project
+    echo "  location: https://github.com/hstream-io/hesp.git"                 >> cabal.project
+    echo "  tag:      187a4850170503264f684021b77b8f762c443647"               >> cabal.project
+    echo ""                                                                   >> cabal.project
+    echo "source-repository-package"                                          >> cabal.project
+    echo "  type:     git"                                                    >> cabal.project
+    echo "  location: https://github.com/hstream-io/log-store"                >> cabal.project
+    echo "  tag:      1e427d354847273b637266936fda2e69ee415e45"               >> cabal.project
+    echo ""                                                                   >> cabal.project
+    echo "source-repository-package"                                          >> cabal.project
+    echo "  type:     git"                                                    >> cabal.project
+    echo "  location: https://github.com/hstream-io/haskell-rocksdb-bindings" >> cabal.project
+    echo "  tag:      e62ed5d0f4d9eedd56ae01c49185a06465ba3eb3"               >> cabal.project
   - "for pkg in $($HCPKG list --simple-output); do echo $pkg | sed 's/-[^-]*$//' | (grep -vE -- '^(mangrove)$' || true) | sed 's/^/constraints: /' | sed 's/$/ installed/' >> cabal.project.local; done"
   - cat cabal.project || true
   - cat cabal.project.local || true

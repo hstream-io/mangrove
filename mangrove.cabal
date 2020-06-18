@@ -32,7 +32,6 @@ library
                   , aeson          >= 1.0
                   , bytestring
                   , co-log
-                  , conduit
                   , containers
                   , exceptions
                   , hesp
@@ -40,6 +39,7 @@ library
                   , mtl
                   , network
                   , network-simple
+                  , streamly
                   , text
                   , time
                   , transformers
@@ -55,7 +55,6 @@ executable mangrove
                   , aeson          >= 1.0
                   , bytestring
                   , co-log
-                  , conduit
                   , containers
                   , exceptions
                   , hesp
@@ -64,6 +63,7 @@ executable mangrove
                   , mtl
                   , network
                   , network-simple
+                  , streamly
                   , text
                   , time
                   , transformers

@@ -15,7 +15,7 @@ import qualified Network.Simple.TCP   as TCP
 import           Network.Socket       (Socket)
 
 import qualified Log.Store.Base       as LogStore
-import           Mangrove             (App, Env (..), processMsg, runApp)
+import           Mangrove             (App, Env (..), onRecvMsg, runApp)
 
 main :: IO ()
 main = do
@@ -40,6 +40,6 @@ runServer ctx = do
       msgs <- HESP.recvMsgs sock 1024
       unless (V.null msgs)
         (do Colog.logDebug $ "Received: " <> Text.pack (show msgs)
-            mapM_ (processMsg sock ctx) msgs
+            mapM_ (onRecvMsg sock ctx) msgs
             go sock
         )

@@ -8,9 +8,8 @@ import qualified Colog
 import           Control.Exception     (SomeException)
 import           Control.Monad.Reader  (liftIO)
 import           Data.ByteString       (ByteString)
-import qualified Data.ByteString.Char8 as BSC
 import qualified Data.Text             as T
-import           Data.Text.Encoding    (decodeUtf8, encodeUtf8)
+import           Data.Text.Encoding    (decodeUtf8)
 import qualified Data.Vector           as V
 import           Data.Word             (Word64)
 import           Log.Store.Base        hiding (Env)
@@ -22,6 +21,7 @@ import qualified Network.Socket        as NS
 import qualified Mangrove.Store        as Store
 import           Mangrove.Types        (App, RequestType (..), parseRequest)
 import           Mangrove.Utils        ((.|.))
+import qualified Mangrove.Utils        as U
 
 -------------------------------------------------------------------------------
 
@@ -32,7 +32,7 @@ processMsg :: Socket
            -> App (Maybe ())
 processMsg sock _ (Left errmsg) = do
   Colog.logError $ "Failed to parse message: " <> T.pack errmsg
-  HESP.sendMsg sock $ HESP.mkSimpleError "ERR" $ (encodeUtf8 . T.pack) errmsg
+  HESP.sendMsg sock $ HESP.mkSimpleError "ERR" $ U.str2bs errmsg
   -- FIXME: should we close this connection?
   liftIO $ NS.gracefulClose sock (10 * 1000)  -- 10 seconds
   return Nothing
@@ -111,12 +111,12 @@ mkSPutResp :: ByteString
            -> HESP.Message
 mkSPutResp topic entryID res =
   let status = if res then "OK" else "ERR"
-      fin    = if res then encodeUtf8 . T.pack . show $ entryID
+      fin    = if res then U.encodeUtf8 entryID
                       else "Message storing failed."
-  in HESP.mkPushFromList "sput" [ HESP.mkBulkString topic
-                                , HESP.mkBulkString status
-                                , HESP.mkBulkString fin
-                                ]
+   in HESP.mkPushFromList "sput" [ HESP.mkBulkString topic
+                                 , HESP.mkBulkString status
+                                 , HESP.mkBulkString fin
+                                 ]
 
 mkSGetResp :: ByteString
            -> [(ByteString, Word64)]
@@ -124,12 +124,12 @@ mkSGetResp :: ByteString
            -> HESP.Message
 mkSGetResp topic contents res =
   let status = if res then "OK" else "ERR"
-      fin    = if res then HESP.mkArrayFromList
-        ((\(p,i) -> HESP.mkArrayFromList [ HESP.mkBulkString (BSC.pack . show $ i)
-                                         , HESP.mkBulkString p
-                                         ]) <$> contents)
+      fin    = if res then HESP.mkArrayFromList $ map cons contents
                       else HESP.mkBulkString "Message fetching failed"
-  in HESP.mkPushFromList "sget" [ HESP.mkBulkString topic
-                                , HESP.mkBulkString status
-                                , fin
-                                ]
+      cons (p, i) = HESP.mkArrayFromList [ HESP.mkBulkString (U.encodeUtf8 i)
+                                         , HESP.mkBulkString p
+                                         ]
+   in HESP.mkPushFromList "sget" [ HESP.mkBulkString topic
+                                 , HESP.mkBulkString status
+                                 , fin
+                                 ]

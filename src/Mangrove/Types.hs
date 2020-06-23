@@ -10,9 +10,16 @@
 {-# LANGUAGE RecordWildCards            #-}
 
 module Mangrove.Types
-  ( Env (..)
+  ( ClientOption (..)
+  , ServerSettings (..)
+  , ServerStatus (..)
+  , Env (..)
+  , ClientId
   , App
   , runApp
+  , getOption
+  , insertOption
+  , deleteOptionBySocket
 
   , QueryName
   , RequestID
@@ -21,13 +28,18 @@ module Mangrove.Types
 
 import qualified Colog
 import           Control.Applicative    ((<|>))
+import           Control.Concurrent.STM (TVar, atomically, modifyTVar,
+                                         readTVarIO, writeTVar)
 import           Control.Monad.IO.Class (MonadIO)
 import           Control.Monad.Reader   (MonadReader, ReaderT, runReaderT)
 import           Data.Aeson             (FromJSON (..), (.:))
 import qualified Data.Aeson             as Aeson
 import qualified Data.Aeson.Types       as Aeson
 import           Data.ByteString        (ByteString)
+import           Data.Map.Strict        (Map)
+import qualified Data.Map.Strict        as Map
 import           Data.Text              (Text)
+import           Data.UUID              (UUID)
 import qualified Data.Vector            as V
 import           Data.Word              (Word64)
 import           GHC.Generics           (Generic)
@@ -35,15 +47,20 @@ import qualified Network.Socket         as NS
 
 -------------------------------------------------------------------------------
 
-data Env m =
-  Env { serverHost    :: !NS.HostName
-      , serverPort    :: !Int
-      , dbPath        :: !String
-      , loggerSetting :: !(LoggerSetting m)
-      }
-  deriving (Generic)
+data ClientOption = ClientOption
+    { clientSock     :: !NS.Socket
+    , clientPubLevel :: !Integer
+    }
 
-instance MonadIO m => FromJSON (Env m) where
+data ServerSettings m = ServerSettings
+    { serverHost    :: !NS.HostName
+    , serverPort    :: !Int
+    , dbPath        :: !String
+    , loggerSetting :: !(LoggerSetting m)
+    }
+    deriving (Generic)
+
+instance MonadIO m => FromJSON (ServerSettings m) where
   parseJSON =
     let opts = Aeson.defaultOptions { Aeson.fieldLabelModifier = flm }
         flm "serverHost"    = "host"
@@ -52,6 +69,32 @@ instance MonadIO m => FromJSON (Env m) where
         flm "loggerSetting" = "logger"
         flm x               = x
      in Aeson.genericParseJSON opts
+
+type ClientId = UUID
+
+data ServerStatus = ServerStatus
+    { clientOptions :: TVar (Map ClientId ClientOption)
+    }
+
+getOption :: ClientId -> ServerStatus -> IO (Maybe ClientOption)
+getOption cid ServerStatus{..} = do
+  options <- readTVarIO clientOptions
+  return $ (Map.!?) options cid
+
+insertOption :: ClientId -> ClientOption -> ServerStatus -> IO ()
+insertOption cid option ServerStatus{..} =
+  atomically $ modifyTVar clientOptions (Map.insert cid option)
+
+deleteOptionBySocket :: NS.Socket -> ServerStatus -> IO ()
+deleteOptionBySocket sock ServerStatus{..} = do
+  options <- readTVarIO clientOptions
+  let options' = Map.filter (\option -> clientSock option /= sock) options
+  atomically $ writeTVar clientOptions options'
+
+data Env m = Env
+    { serverSettings :: ServerSettings m
+    , serverStatus   :: ServerStatus
+    }
 
 newtype LoggerSetting m =
   LoggerSetting { logAction :: Colog.LogAction m Colog.Message }
@@ -62,11 +105,13 @@ instance MonadIO m => FromJSON (LoggerSetting m) where
 
 instance Colog.HasLog (Env m) Colog.Message m where
   getLogAction :: Env m -> Colog.LogAction m Colog.Message
-  getLogAction = logAction . loggerSetting
+  getLogAction = logAction . loggerSetting . serverSettings
   {-# INLINE getLogAction #-}
 
   setLogAction :: Colog.LogAction m Colog.Message -> Env m -> Env m
-  setLogAction new env = env { loggerSetting = LoggerSetting new }
+  setLogAction new env =
+    let settings = serverSettings env
+     in env {serverSettings = settings {loggerSetting = LoggerSetting new}}
   {-# INLINE setLogAction #-}
 
 newtype App a = App { unApp :: ReaderT (Env App) IO a }

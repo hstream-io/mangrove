@@ -41,7 +41,17 @@ data Env m =
       , dbPath        :: !String
       , loggerSetting :: !(LoggerSetting m)
       }
-  deriving (Generic, FromJSON)
+  deriving (Generic)
+
+instance MonadIO m => FromJSON (Env m) where
+  parseJSON =
+    let opts = Aeson.defaultOptions { Aeson.fieldLabelModifier = flm }
+        flm "serverHost"    = "host"
+        flm "serverPort"    = "port"
+        flm "dbPath"        = "db-path"
+        flm "loggerSetting" = "logger"
+        flm x               = x
+     in Aeson.genericParseJSON opts
 
 newtype LoggerSetting m =
   LoggerSetting { logAction :: Colog.LogAction m Colog.Message }

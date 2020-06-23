@@ -127,8 +127,9 @@ type QueryName = String
 type RequestID = ByteString
 
 data RequestType
-  = SPut ByteString ByteString
-  | SPuts ByteString (V.Vector ByteString)
+  = Handshake Integer
+  | SPut ClientId ByteString ByteString
+  | SPuts ClientId ByteString (V.Vector ByteString)
   | SGet ByteString (Maybe Word64) (Maybe Word64) Integer Integer
   deriving (Show, Eq)
 

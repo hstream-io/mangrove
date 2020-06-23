@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards   #-}
 
 module Mangrove.Server
   ( onRecvMsg
@@ -6,11 +7,13 @@ module Mangrove.Server
 
 import qualified Colog
 import           Control.Exception     (SomeException)
-import           Control.Monad.Reader  (liftIO)
+import           Control.Monad.Reader  (ask, liftIO)
 import           Data.ByteString       (ByteString)
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.Text             as T
 import           Data.Text.Encoding    (decodeUtf8)
+import           Data.UUID             (toText)
+import           Data.UUID.V4          (nextRandom)
 import qualified Data.Vector           as V
 import           Data.Word             (Word64)
 import           Log.Store.Base        hiding (Env)
@@ -21,7 +24,9 @@ import qualified Network.Socket        as NS
 import           Text.Read             (readMaybe)
 
 import qualified Mangrove.Store        as Store
-import           Mangrove.Types        (App, RequestType (..))
+import           Mangrove.Types        (App, ClientId, ClientOption (..),
+                                        Env (..), RequestType (..), getOption,
+                                        insertOption)
 import           Mangrove.Utils        ((.|.))
 import qualified Mangrove.Utils        as U
 
@@ -51,31 +56,49 @@ parseRequest :: HESP.Message
 parseRequest msg = do
   (n, paras) <- HESP.commandParser msg
   case n of
+    "hi"   -> parseHandshake paras
     "sput" -> parseSPuts paras <> parseSPut paras
     "sget" -> parseSGet paras
     _      -> Left $ "Unrecognized request " <> n <> "."
 
 processRequest :: Socket -> Context -> RequestType -> App (Maybe ())
-processRequest sock ctx rt = processSPut  sock ctx rt
-                         .|. processSPuts sock ctx rt
-                         .|. processSGet  sock ctx rt
+processRequest sock ctx rt = processHandshake sock ctx rt
+                         .|. processSPut      sock ctx rt
+                         .|. processSPuts     sock ctx rt
+                         .|. processSGet      sock ctx rt
 
 -------------------------------------------------------------------------------
 -- Parse client requests
 
+parseHandshake :: V.Vector HESP.Message
+               -> Either ByteString RequestType
+parseHandshake paras = do
+    dict  <- HESP.extractMapParam "Arguments" paras 0
+    value <- HESP.extractMapField dict (HESP.mkBulkString "pubLevel")
+    level <- getIntegerEither value "pubLevel"
+    return $ Handshake level
+  where
+    getIntegerEither :: HESP.Message -> ByteString -> Either ByteString Integer
+    getIntegerEither (HESP.Integer x) _ = Right x
+    getIntegerEither _ label            = Left $ label <> " must be an integer."
+
 parseSPut :: V.Vector HESP.Message
           -> Either ByteString RequestType
 parseSPut paras = do
-  topic   <- HESP.extractBulkStringParam "Topic"   paras 0
-  payload <- HESP.extractBulkStringParam "Payload" paras 1
-  return   $ SPut topic payload
+  cidStr  <- HESP.extractBulkStringParam "Client ID" paras 0
+  cid     <- getClientIdEither cidStr
+  topic   <- HESP.extractBulkStringParam "Topic"     paras 1
+  payload <- HESP.extractBulkStringParam "Payload"   paras 2
+  return   $ SPut cid topic payload
 
 parseSPuts :: V.Vector HESP.Message
            -> Either ByteString RequestType
 parseSPuts paras = do
-  topic    <- HESP.extractBulkStringParam      "Topic"   paras 0
-  payloads <- HESP.extractBulkStringArrayParam "Payload" paras 1
-  return $ SPuts topic payloads
+  cidStr  <- HESP.extractBulkStringParam       "Client ID"  paras 0
+  cid     <- getClientIdEither cidStr
+  topic    <- HESP.extractBulkStringParam      "Topic"      paras 1
+  payloads <- HESP.extractBulkStringArrayParam "Payload"    paras 2
+  return $ SPuts cid topic payloads
 
 parseSGet :: V.Vector HESP.Message
           -> Either ByteString RequestType
@@ -92,40 +115,71 @@ parseSGet paras = do
 -------------------------------------------------------------------------------
 -- Process client requests
 
-processSPut :: Socket -> Context -> RequestType -> App (Maybe ())
-processSPut sock ctx (SPut topic payload) = do
-  Colog.logInfo $ "Writing " <> decodeUtf8 topic <> " ..."
-  r <- liftIO $ Store.sput ctx topic payload
-  case r of
-    Left e        -> do
-      Colog.logException (e :: SomeException)
-      let resp = mkSPutResp topic 0 False
-      Colog.logDebug $ T.pack ("Sending: " ++ show resp)
-      HESP.sendMsg sock resp
-    Right entryID -> do
-      let resp = mkSPutResp topic entryID True
-      Colog.logDebug $ T.pack ("Sending: " ++ show resp)
-      HESP.sendMsg sock resp
+processHandshake :: Socket -> Context -> RequestType -> App (Maybe ())
+processHandshake sock _ (Handshake n) = do
+  Env{..} <- ask
+  uuid <- liftIO nextRandom
+  Colog.logInfo $ "Generated ClientID: " <> toText uuid
+  let option = ClientOption sock n
+  liftIO $ insertOption uuid option serverStatus
+  let resp = mkHandshakeResp uuid True
+  Colog.logDebug $ T.pack ("Sending: " ++ show resp)
+  HESP.sendMsg sock resp
   return $ Just ()
+processHandshake _ _ _ = return Nothing
+
+processSPut :: Socket -> Context -> RequestType -> App (Maybe ())
+processSPut _ ctx (SPut cid topic payload) = do
+  Env{..} <- ask
+  option <- liftIO $ getOption cid serverStatus
+  case option of
+    Nothing               -> do
+      Colog.logError $ "ClientID " <> T.pack (show cid) <> " is not found."
+      return $ Just ()
+    Just ClientOption{..} -> do
+      Colog.logInfo $ "Writing " <> decodeUtf8 topic <> " ..."
+      r <- liftIO $ Store.sput ctx topic payload
+      case clientPubLevel of
+        1 -> case r of
+          Left e        -> do
+            Colog.logException (e :: SomeException)
+            let resp = mkSPutResp cid topic 0 False
+            Colog.logDebug $ T.pack ("Sending: " ++ show resp)
+            HESP.sendMsg clientSock resp
+          Right entryID -> do
+            let resp = mkSPutResp cid topic entryID True
+            Colog.logDebug $ T.pack ("Sending: " ++ show resp)
+            HESP.sendMsg clientSock resp
+        _ -> return ()
+      return $ Just ()
 processSPut _ _ _ = return Nothing
 
 processSPuts :: Socket -> Context -> RequestType -> App (Maybe ())
-processSPuts sock ctx (SPuts topic payloads) = do
-  Colog.logInfo $ "Writing " <> decodeUtf8 topic <> " ..."
-  r <- liftIO $ Store.sputs ctx topic payloads
-  case r of
-    Left (entryIDs, e) -> do
-      Colog.logException (e :: SomeException)
-      let succIds = V.map (\x -> mkSPutResp topic x True) entryIDs
-          errResp = mkSPutResp topic 0 False
-      let resps = V.snoc succIds errResp
-      Colog.logDebug $ T.pack ("Sending: " ++ show resps)
-      HESP.sendMsgs sock resps
-    Right entryIDs     -> do
-      let resps = V.map (\x -> mkSPutResp topic x True) entryIDs
-      Colog.logDebug $ T.pack ("Sending: " ++ show resps)
-      HESP.sendMsgs sock resps
-  return $ Just ()
+processSPuts _ ctx (SPuts cid topic payloads) = do
+  Env{..} <- ask
+  option <- liftIO $ getOption cid serverStatus
+  case option of
+    Nothing               -> do
+      Colog.logError $ "ClientID " <> T.pack (show cid) <> " is not found."
+      return $ Just ()
+    Just ClientOption{..} -> do
+      Colog.logInfo $ "Writing " <> decodeUtf8 topic <> " ..."
+      r <- liftIO $ Store.sputs ctx topic payloads
+      case clientPubLevel of
+        1 -> case r of
+          Left (entryIDs, e) -> do
+            Colog.logException (e :: SomeException)
+            let succIds = V.map (\x -> mkSPutResp cid topic x True) entryIDs
+                errResp = mkSPutResp cid topic 0 False
+            let resps = V.snoc succIds errResp
+            Colog.logDebug $ T.pack ("Sending: " ++ show resps)
+            HESP.sendMsgs clientSock resps
+          Right entryIDs     -> do
+            let resps = V.map (\x -> mkSPutResp cid topic x True) entryIDs
+            Colog.logDebug $ T.pack ("Sending: " ++ show resps)
+            HESP.sendMsgs clientSock resps
+        _ -> return ()
+      return $ Just ()
 processSPuts _ _ _ = return Nothing
 
 processSGet :: Socket -> Context -> RequestType -> App (Maybe ())
@@ -148,15 +202,24 @@ processSGet _ _ _ = return Nothing
 -------------------------------------------------------------------------------
 -- Messages send to client
 
-mkSPutResp :: ByteString
+mkHandshakeResp :: ClientId
+                -> Bool
+                -> HESP.Message
+mkHandshakeResp uuid True =
+  HESP.mkPushFromList "hi" [ HESP.mkBulkString . BSC.pack . show $ uuid ]
+mkHandshakeResp _ False = undefined
+
+mkSPutResp :: ClientId
+           -> ByteString
            -> Word64
            -> Bool
            -> HESP.Message
-mkSPutResp topic entryID res =
+mkSPutResp uuid topic entryID res =
   let status = if res then "OK" else "ERR"
       fin    = if res then U.encodeUtf8 entryID
                       else "Message storing failed."
-   in HESP.mkPushFromList "sput" [ HESP.mkBulkString topic
+   in HESP.mkPushFromList "sput" [ HESP.mkBulkString . BSC.pack . show $ uuid
+                                 , HESP.mkBulkString topic
                                  , HESP.mkBulkString status
                                  , HESP.mkBulkString fin
                                  ]
@@ -186,3 +249,9 @@ validateInt label s
   | otherwise = case readMaybe (BSC.unpack s) of
       Nothing -> Left $ label <> " must be an integer."
       Just x  -> Right (Just x)
+
+getClientIdEither :: ByteString -> Either ByteString ClientId
+getClientIdEither bs =
+  case readMaybe (BSC.unpack bs) of
+    Nothing   -> Left $ "Invalid UUID: " <> bs <> "."
+    Just uuid -> Right uuid

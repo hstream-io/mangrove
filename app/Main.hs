@@ -47,9 +47,12 @@ runServer ctx = do
   where
     go :: Socket -> App ()
     go sock = do
+      Env{..} <- ask
       msgs <- HESP.recvMsgs sock 1024
       unless (V.null msgs)
         (do Colog.logDebug $ "Received: " <> Text.pack (show msgs)
             mapM_ (onRecvMsg sock ctx) msgs
             go sock
         )
+      when (V.null msgs)
+        (liftIO $ deleteOptionBySocket sock serverStatus)

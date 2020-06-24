@@ -28,12 +28,14 @@ library
   other-modules:    Mangrove.Server
                     Mangrove.Types
   hs-source-dirs:   src
-  build-depends:    base           >= 4.9 && < 5
-                  , aeson          >= 1.0
+  build-depends:    base                 >= 4.9 && < 5
+                  , aeson                >= 1.0
                   , bytestring
                   , co-log
                   , containers
+                  , deepseq
                   , exceptions
+                  , hashable
                   , hesp
                   , log-store
                   , mtl
@@ -43,6 +45,8 @@ library
                   , text
                   , time
                   , transformers
+                  , unordered-containers
+                  , uuid
                   , vector
   default-language: Haskell2010
   ghc-options:      -Wall -Wcompat -Widentities -Wincomplete-record-updates
@@ -51,12 +55,14 @@ library
 executable mangrove
   main-is:          Main.hs
   hs-source-dirs:   app
-  build-depends:    base           >= 4.9 && < 5
-                  , aeson          >= 1.0
+  build-depends:    base                 >= 4.9 && < 5
+                  , aeson                >= 1.0
                   , bytestring
                   , co-log
                   , containers
+                  , deepseq
                   , exceptions
+                  , hashable
                   , hesp
                   , log-store
                   , mangrove
@@ -67,8 +73,10 @@ executable mangrove
                   , text
                   , time
                   , transformers
+                  , unordered-containers
+                  , uuid
                   , vector
-                  , yaml           >= 0.11
+                  , yaml                 >= 0.11
   default-language: Haskell2010
   ghc-options:      -Wall -Wcompat -Widentities -Wincomplete-record-updates
                     -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints

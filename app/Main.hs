@@ -5,8 +5,7 @@ module Main where
 
 import qualified Colog
 import           Control.Exception    (bracket)
-import           Control.Monad        (unless)
-import           Control.Monad.Reader (ask, runReaderT)
+import           Control.Monad.Reader (ask, liftIO, runReaderT)
 import qualified Data.Text            as Text
 import qualified Data.Vector          as V
 import           Data.Yaml.Config     (loadYamlSettingsArgs, useEnv)
@@ -15,31 +14,40 @@ import qualified Network.Simple.TCP   as TCP
 import           Network.Socket       (Socket)
 
 import qualified Log.Store.Base       as LogStore
-import           Mangrove             (App, Env (..), onRecvMsg, runApp)
+import           Mangrove             (App, Env (..), ServerSettings (..))
+import qualified Mangrove             as Mangrove
 
 main :: IO ()
 main = do
-  env <- loadYamlSettingsArgs [] useEnv
-  let dbdir = dbPath env
+  settings@ServerSettings{..} <- loadYamlSettingsArgs [] useEnv
+  status <- Mangrove.newServerStatus
+  let env = Env { serverSettings = settings
+                , serverStatus   = status
+                }
   bracket
-    (LogStore.initialize $ LogStore.UserDefinedEnv (LogStore.Config dbdir))
+    (LogStore.initialize $ LogStore.UserDefinedEnv (LogStore.Config dbPath))
     (runReaderT LogStore.shutDown)
-    (runApp env . runServer)
+    (Mangrove.runApp env . runServer)
 
 runServer :: LogStore.Context -> App ()
 runServer ctx = do
   env@Env{..} <- ask
-  let h = TCP.Host serverHost
-      p = show serverPort
+  let h = TCP.Host (serverHost serverSettings)
+      p = show (serverPort serverSettings)
   Colog.logInfo "------------------------- Mangrove -------------------------"
-  Colog.logInfo $ "Listening on " <> Text.pack serverHost <> ":" <> Text.pack p
-  TCP.serve h p $ \(sock, _) -> runApp env $ go sock
+  Colog.logInfo $ "Listening on "
+    <> Text.pack (serverHost serverSettings) <> ":" <> Text.pack p
+  TCP.serve h p $ \(sock, _) -> Mangrove.runApp env $ go sock
   where
     go :: Socket -> App ()
     go sock = do
+      env <- ask
       msgs <- HESP.recvMsgs sock 1024
-      unless (V.null msgs)
-        (do Colog.logDebug $ "Received: " <> Text.pack (show msgs)
-            mapM_ (onRecvMsg sock ctx) msgs
-            go sock
-        )
+      if V.null msgs
+         then do
+           let status = serverStatus env
+           liftIO $ Mangrove.deleteClientOptionsBySocket status sock
+         else do
+           Colog.logDebug $ "Received: " <> Text.pack (show msgs)
+           mapM_ (Mangrove.onRecvMsg sock ctx) msgs
+           go sock

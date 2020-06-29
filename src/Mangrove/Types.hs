@@ -8,6 +8,7 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE TypeFamilies               #-}
 
 module Mangrove.Types
   ( Env (..)
@@ -40,28 +41,30 @@ module Mangrove.Types
   ) where
 
 import qualified Colog
-import           Control.Applicative    ((<|>))
-import           Control.DeepSeq        (NFData)
-import           Control.Monad.IO.Class (MonadIO)
-import           Control.Monad.Reader   (MonadReader, ReaderT, runReaderT)
-import           Data.Aeson             (FromJSON (..), (.:))
-import qualified Data.Aeson             as Aeson
-import qualified Data.Aeson.Types       as Aeson
-import           Data.ByteString        (ByteString)
-import           Data.Hashable          (Hashable)
-import           Data.HashMap.Strict    (HashMap)
-import qualified Data.HashMap.Strict    as HMap
-import           Data.Text              (Text)
-import           Data.UUID              (UUID)
-import qualified Data.UUID              as UUID
-import qualified Data.UUID.V4           as UUID
-import qualified Data.Vector            as V
-import           Data.Word              (Word64)
-import           GHC.Conc               (TVar, atomically, newTVarIO, readTVar,
-                                         readTVarIO, writeTVar)
-import           GHC.Generics           (Generic)
-import           Network.Socket         (Socket)
-import qualified Network.Socket         as NS
+import           Control.Applicative         ((<|>))
+import           Control.DeepSeq             (NFData)
+import           Control.Monad.Base          (MonadBase)
+import           Control.Monad.IO.Class      (MonadIO)
+import           Control.Monad.Reader        (MonadReader, ReaderT, runReaderT)
+import           Control.Monad.Trans.Control (MonadBaseControl (..))
+import           Data.Aeson                  (FromJSON (..), (.:))
+import qualified Data.Aeson                  as Aeson
+import qualified Data.Aeson.Types            as Aeson
+import           Data.ByteString             (ByteString)
+import           Data.Hashable               (Hashable)
+import           Data.HashMap.Strict         (HashMap)
+import qualified Data.HashMap.Strict         as HMap
+import           Data.Text                   (Text)
+import           Data.UUID                   (UUID)
+import qualified Data.UUID                   as UUID
+import qualified Data.UUID.V4                as UUID
+import qualified Data.Vector                 as V
+import           Data.Word                   (Word64)
+import           GHC.Conc                    (TVar, atomically, newTVarIO,
+                                              readTVar, readTVarIO, writeTVar)
+import           GHC.Generics                (Generic)
+import           Network.Socket              (Socket)
+import qualified Network.Socket              as NS
 
 -------------------------------------------------------------------------------
 
@@ -71,7 +74,14 @@ data Env m =
       }
 
 newtype App a = App { unApp :: ReaderT (Env App) IO a }
-  deriving newtype (Functor, Applicative, Monad, MonadIO, MonadReader (Env App))
+  deriving newtype ( Functor, Applicative, Monad
+                   , MonadIO, MonadReader (Env App), MonadBase IO
+                   )
+
+instance MonadBaseControl IO App where
+  type StM App a = a
+  liftBaseWith f = App $ liftBaseWith $ \x -> f (x . unApp)
+  restoreM = App . restoreM
 
 runApp :: Env App -> App a -> IO a
 runApp env app = runReaderT (unApp app) env

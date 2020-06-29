@@ -42,13 +42,14 @@ library
                   , hashable
                   , hesp
                   , log-store
+                  , monad-control        ^>= 1.0
                   , mtl
-                  , network
-                  , network-simple
+                  , network              >= 3.1.1
                   , streamly
                   , text
                   , time
                   , transformers
+                  , transformers-base
                   , unordered-containers
                   , uuid
                   , vector
@@ -71,8 +72,7 @@ executable mangrove
                   , log-store
                   , mangrove
                   , mtl
-                  , network
-                  , network-simple
+                  , network              >= 3.1.1
                   , streamly
                   , text
                   , time
@@ -91,7 +91,7 @@ executable mangrove-benchmark-cli
   build-depends:    base                 >= 4.9 && < 5
                   , bytestring
                   , hesp
-                  , network
+                  , network              >= 3.1.1
                   , optparse-applicative ^>= 0.15
                   , text
                   , time
@@ -115,7 +115,7 @@ test-suite mangrove-test
                     , log-store
                     , mangrove
                     , mtl
-                    , network
+                    , network    >= 3.1.1
                     , temporary
                     , text
                     , time

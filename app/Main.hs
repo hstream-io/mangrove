@@ -13,6 +13,7 @@ import qualified Data.Vector            as V
 import           Data.Yaml.Config       (loadYamlSettingsArgs, useEnv)
 import qualified Network.HESP           as HESP
 import           Network.Socket         (Socket)
+import           System.Directory       (createDirectoryIfMissing)
 
 import qualified Log.Store.Base         as LogStore
 import           Mangrove               (App, Env (..), ServerSettings (..))
@@ -25,6 +26,9 @@ main = do
   let env = Env { serverSettings = settings
                 , serverStatus   = status
                 }
+  -- create db directory (and all parent directories) if not exists.
+  createDirectoryIfMissing True dbPath
+  -- run server
   bracket
     (LogStore.initialize $ LogStore.UserDefinedEnv (LogStore.Config dbPath))
     (runReaderT LogStore.shutDown)

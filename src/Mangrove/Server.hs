@@ -19,7 +19,6 @@ import           Log.Store.Base        hiding (Env)
 import qualified Network.HESP          as HESP
 import qualified Network.HESP.Commands as HESP
 import           Network.Socket        (Socket)
-import qualified Network.Socket        as NS
 import           Text.Read             (readMaybe)
 
 import qualified Mangrove.Store        as Store
@@ -39,12 +38,8 @@ onRecvMsg :: Socket
 onRecvMsg sock _ (Left errmsg) = do
   Colog.logError $ "Failed to parse message: " <> Text.pack errmsg
   HESP.sendMsg sock $ mkGeneralError $ U.str2bs errmsg
-  -- FIXME: should we close this connection?
-  --
-  -- Warning: the socket may be closed twice in a small time interval!
-  -- This must be fixed in the future.
-  liftIO $ NS.gracefulClose sock (10 * 1000)  -- 10 seconds
-  return Nothing
+  -- Outer function will catch all exceptions and do a clean job.
+  errorWithoutStackTrace "Invalid TCP message!"
 onRecvMsg sock ctx (Right msg) =
   case parseRequest msg of
     Left e    -> do
@@ -63,7 +58,6 @@ parseRequest msg = do
     "sget" -> parseSGet paras
     _      -> Left $ "Unrecognized request " <> n <> "."
 
--- TODO: delete client options by socket while sending error happens
 processRequest :: Socket -> Context -> RequestType -> App (Maybe ())
 processRequest sock ctx rt = processHandshake sock ctx rt
                          .|. processSPut      sock ctx rt

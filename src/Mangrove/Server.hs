@@ -106,9 +106,9 @@ processHandshake :: Socket -> Context -> RequestType -> App (Maybe ())
 processHandshake sock _ (Handshake opt) = do
   Env{..} <- ask
   cid <- liftIO T.newClientId
-  Colog.logDebug $ "Generated ClientID: " <> T.packClientId cid
   let client = T.createClientStatus sock opt
   liftIO $ T.insertClient cid client serverStatus
+  Colog.logInfo $ "Created client: " <> T.packClientId cid
   let resp = mkHandshakeRespSucc cid
   Colog.logDebug $ Text.pack ("Sending: " ++ show resp)
   HESP.sendMsg sock resp
@@ -128,7 +128,7 @@ processSPuts _ _ _ = return Nothing
 
 processSGet :: Socket -> Context -> RequestType -> App (Maybe ())
 processSGet sock ctx (SGet topic sid eid maxn offset) = do
-  Colog.logInfo $ "Reading " <> decodeUtf8 topic <> " ..."
+  Colog.logDebug $ "Reading " <> decodeUtf8 topic <> " ..."
   r <- liftIO $ Store.sget ctx topic sid eid offset maxn
   case r of
     Left e   -> do
@@ -159,7 +159,7 @@ processPub sock ctx lcmd cid topic payloads = do
       Colog.logWarning $ decodeUtf8 errmsg
       HESP.sendMsg sock $ mkGeneralPushError lcmd errmsg
     Just client -> do
-      Colog.logInfo $ "Writing " <> decodeUtf8 topic <> " ..."
+      Colog.logDebug $ "Writing " <> decodeUtf8 topic <> " ..."
       r <- liftIO $ Store.sputs ctx topic payloads
       let clientPubLevel = T.extractClientPubLevel client
       let clientSock = T.clientSocket client

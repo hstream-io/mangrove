@@ -60,6 +60,6 @@ clean sock = do
   env <- ask
   Colog.logInfo $ "Clean server status..."
   let status = serverStatus env
-  liftIO $ do Mangrove.deleteClientOptionsBySocket status sock
+  liftIO $ do Mangrove.deleteClientsBySocket sock status
               -- FIXME: use gracefulClose ?
               HESP.close sock

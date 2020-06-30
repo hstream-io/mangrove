@@ -21,6 +21,11 @@ module Mangrove.Types
     -- * Server status
   , ServerStatus
   , newServerStatus
+  , getClient
+  , insertClient
+  , deleteClient
+  , deleteClientsBy
+  , deleteClientsBySocket
     -- ** Client id
   , ClientId
   , newClientId
@@ -28,13 +33,12 @@ module Mangrove.Types
   , packClientIdBS
   , getClientIdFromASCIIBytes
   , getClientIdFromASCIIBytes'
-    -- ** Client options
-  , ClientOptions (..)
-  , getClientOptions
-  , insertClientOptions
-  , deleteClientOptions
-  , deleteClientOptionsBy
-  , deleteClientOptionsBySocket
+    -- ** Client status
+  , ClientStatus
+  , createClientStatus
+  , clientSocket
+  , getClientOption
+  , extractClientPubLevel
 
     -- * Client requests
   , RequestType (..)
@@ -54,6 +58,8 @@ import           Data.ByteString             (ByteString)
 import           Data.Hashable               (Hashable)
 import           Data.HashMap.Strict         (HashMap)
 import qualified Data.HashMap.Strict         as HMap
+import           Data.Map.Strict             (Map)
+import qualified Data.Map.Strict             as Map
 import           Data.Text                   (Text)
 import           Data.UUID                   (UUID)
 import qualified Data.UUID                   as UUID
@@ -63,6 +69,8 @@ import           Data.Word                   (Word64)
 import           GHC.Conc                    (TVar, atomically, newTVarIO,
                                               readTVar, readTVarIO, writeTVar)
 import           GHC.Generics                (Generic)
+import qualified Network.HESP                as HESP
+import qualified Network.HESP.Commands       as HESP
 import           Network.Socket              (Socket)
 import qualified Network.Socket              as NS
 
@@ -128,6 +136,42 @@ instance Colog.HasLog (Env m) Colog.Message m where
 -------------------------------------------------------------------------------
 -- Server status
 
+data ServerStatus =
+  ServerStatus { serverClients :: TVar (HashMap ClientId ClientStatus)
+               }
+
+newServerStatus :: IO ServerStatus
+newServerStatus = do
+  clients <- newTVarIO HMap.empty
+  return ServerStatus { serverClients = clients
+                      }
+
+getClient :: ClientId -> ServerStatus -> IO (Maybe ClientStatus)
+getClient cid ServerStatus{..} = do
+  settings <- readTVarIO serverClients
+  return $ HMap.lookup cid settings
+
+insertClient :: ClientId -> ClientStatus -> ServerStatus -> IO ()
+insertClient cid options ServerStatus{..} = atomically $ do
+  s <- readTVar serverClients
+  writeTVar serverClients $! (HMap.insert cid options s)
+
+-- | Remove the client for the specified 'ClientId' from
+-- 'ServerStatus' if present.
+deleteClient :: ClientId -> ServerStatus -> IO ()
+deleteClient cid ServerStatus{..} = atomically $ do
+  s <- readTVar serverClients
+  writeTVar serverClients $! (HMap.delete cid s)
+
+deleteClientsBy :: (ClientStatus -> Bool) -> ServerStatus -> IO ()
+deleteClientsBy cond ServerStatus{..} = atomically $ do
+  s <- readTVar serverClients
+  writeTVar serverClients $! HMap.filter (not . cond) s
+
+deleteClientsBySocket :: Socket -> ServerStatus -> IO ()
+deleteClientsBySocket sock status =
+  deleteClientsBy (\otps -> clientSock otps == sock) status
+
 newtype ClientId = ClientId { unClientId :: UUID }
   deriving newtype (Show, Eq, Read, Hashable, NFData)
 
@@ -149,52 +193,33 @@ getClientIdFromASCIIBytes' bs =
     Just clientid -> Right clientid
     Nothing       -> Left $ "Invalid client-id: " <> bs <> "."
 
-data ClientOptions =
-  ClientOptions { clientSock     :: !Socket
-                , clientPubLevel :: !Integer
-                }
-
-data ServerStatus =
-  ServerStatus { clientSettings :: TVar (HashMap ClientId ClientOptions)
+data ClientStatus =
+  ClientStatus { clientSock    :: !Socket
+               , clientOptions :: Map HESP.Message HESP.Message
                }
 
-newServerStatus :: IO ServerStatus
-newServerStatus = do
-  clientSettings <- newTVarIO HMap.empty
-  return ServerStatus { clientSettings = clientSettings
-                      }
+-- | Create client status from connection and handshake message
+-- sent through hesp.
+createClientStatus :: Socket -> Map HESP.Message HESP.Message -> ClientStatus
+createClientStatus = ClientStatus
 
-getClientOptions :: ServerStatus -> ClientId -> IO (Maybe ClientOptions)
-getClientOptions ServerStatus{..} cid = do
-  settings <- readTVarIO clientSettings
-  return $ HMap.lookup cid settings
+clientSocket :: ClientStatus -> Socket
+clientSocket = clientSock
 
-insertClientOptions :: ServerStatus -> ClientId -> ClientOptions -> IO ()
-insertClientOptions ServerStatus{..} cid options = atomically $ do
-  s <- readTVar clientSettings
-  writeTVar clientSettings $! (HMap.insert cid options s)
+getClientOption :: HESP.Message -> ClientStatus -> Maybe HESP.Message
+getClientOption key ClientStatus{ clientOptions = opts } =
+  Map.lookup key opts
 
--- | Remove the 'ClientOptions' for the specified 'ClientId' from
--- 'ServerStatus' if present.
-deleteClientOptions :: ServerStatus -> ClientId -> IO ()
-deleteClientOptions ServerStatus{..} cid = atomically $ do
-  s <- readTVar clientSettings
-  writeTVar clientSettings $! (HMap.delete cid s)
-
-deleteClientOptionsBy :: ServerStatus -> (ClientOptions -> Bool) -> IO ()
-deleteClientOptionsBy ServerStatus{..} cond = atomically $ do
-  s <- readTVar clientSettings
-  writeTVar clientSettings $! HMap.filter (not . cond) s
-
-deleteClientOptionsBySocket :: ServerStatus -> Socket -> IO ()
-deleteClientOptionsBySocket status sock =
-  deleteClientOptionsBy status $ \otps -> clientSock otps == sock
+extractClientPubLevel :: ClientStatus -> Either ByteString Integer
+extractClientPubLevel ClientStatus{ clientOptions = opts } = do
+  value <- HESP.extractMapField opts (HESP.mkBulkString "pubLevel")
+  validateInteger value "pubLevel"
 
 -------------------------------------------------------------------------------
 -- Client requests
 
 data RequestType
-  = Handshake Integer
+  = Handshake (Map HESP.Message HESP.Message)
   | SPut ClientId ByteString ByteString
   | SPuts ClientId ByteString (V.Vector ByteString)
   | SGet ByteString (Maybe Word64) (Maybe Word64) Integer Integer
@@ -229,3 +254,9 @@ level action = \case
   "error"   -> return $ Colog.filterBySeverity Colog.E sev action
   _         -> fail "Invalid logger level"
   where sev Colog.Msg{..} = msgSeverity
+
+-------------------------------------------------------------------------------
+
+validateInteger :: HESP.Message -> ByteString -> Either ByteString Integer
+validateInteger (HESP.Integer x) _ = Right x
+validateInteger _ label            = Left $ label <> " must be an integer."

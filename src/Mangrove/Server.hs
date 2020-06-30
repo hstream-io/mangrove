@@ -22,8 +22,7 @@ import           Network.Socket        (Socket)
 import           Text.Read             (readMaybe)
 
 import qualified Mangrove.Store        as Store
-import           Mangrove.Types        (App, ClientId, ClientOptions (..),
-                                        Env (..), RequestType (..))
+import           Mangrove.Types        (App, Env (..), RequestType (..))
 import qualified Mangrove.Types        as T
 import           Mangrove.Utils        ((.|.))
 import qualified Mangrove.Utils        as U
@@ -69,14 +68,8 @@ processRequest sock ctx rt = processHandshake sock ctx rt
 
 parseHandshake :: Vector HESP.Message -> Either ByteString RequestType
 parseHandshake paras = do
-    dict  <- HESP.extractMapParam "Arguments" paras 0
-    value <- HESP.extractMapField dict (HESP.mkBulkString "pubLevel")
-    level <- getIntegerEither value "pubLevel"
-    return $ Handshake level
-  where
-    getIntegerEither :: HESP.Message -> ByteString -> Either ByteString Integer
-    getIntegerEither (HESP.Integer x) _ = Right x
-    getIntegerEither _ label            = Left $ label <> " must be an integer."
+  options <- HESP.extractMapParam "Options" paras 0
+  return $ Handshake options
 
 parseSPut :: Vector HESP.Message -> Either ByteString RequestType
 parseSPut paras = do
@@ -110,14 +103,12 @@ parseSGet paras = do
 -- Process client requests
 
 processHandshake :: Socket -> Context -> RequestType -> App (Maybe ())
-processHandshake sock _ (Handshake n) = do
+processHandshake sock _ (Handshake opt) = do
   Env{..} <- ask
   cid <- liftIO T.newClientId
   Colog.logDebug $ "Generated ClientID: " <> T.packClientId cid
-  let options = ClientOptions { clientSock     = sock
-                              , clientPubLevel = n
-                              }
-  liftIO $ T.insertClientOptions serverStatus cid options
+  let client = T.createClientStatus sock opt
+  liftIO $ T.insertClient cid client serverStatus
   let resp = mkHandshakeRespSucc cid
   Colog.logDebug $ Text.pack ("Sending: " ++ show resp)
   HESP.sendMsg sock resp
@@ -155,24 +146,26 @@ processSGet _ _ _ = return Nothing
 processPub :: Socket
            -> Context
            -> ByteString
-           -> ClientId
+           -> T.ClientId
            -> ByteString
            -> Vector ByteString
            -> App ()
 processPub sock ctx lcmd cid topic payloads = do
   Env{..} <- ask
-  option <- liftIO $ T.getClientOptions serverStatus cid
-  case option of
-    Nothing               -> do
+  m_client <- liftIO $ T.getClient cid serverStatus
+  case m_client of
+    Nothing -> do
       let errmsg = "ClientID " <> T.packClientIdBS cid <> " not found."
       Colog.logWarning $ decodeUtf8 errmsg
       HESP.sendMsg sock $ mkGeneralPushError lcmd errmsg
-    Just ClientOptions{..} -> do
+    Just client -> do
       Colog.logInfo $ "Writing " <> decodeUtf8 topic <> " ..."
       r <- liftIO $ Store.sputs ctx topic payloads
+      let clientPubLevel = T.extractClientPubLevel client
+      let clientSock = T.clientSocket client
       case clientPubLevel of
-        0 -> return ()
-        1 -> case r of
+        Right 0 -> return ()
+        Right 1 -> case r of
           Left (entryIDs, e) -> do
             Colog.logException (e :: SomeException)
             let succIds = V.map (\x -> mkSPutResp cid topic x True) entryIDs
@@ -184,9 +177,12 @@ processPub sock ctx lcmd cid topic payloads = do
             let resps = V.map (\x -> mkSPutResp cid topic x True) entryIDs
             Colog.logDebug $ Text.pack ("Sending: " ++ show resps)
             HESP.sendMsgs clientSock resps
-        _ -> do
-          let errmsg = "Unsupported pubLevel: "
-                    <> (U.str2bs . show) clientPubLevel
+        Right x -> do
+          let errmsg = "Unsupported pubLevel: " <> (U.str2bs . show) x
+          Colog.logWarning $ decodeUtf8 errmsg
+          HESP.sendMsg clientSock $ mkGeneralPushError lcmd errmsg
+        Left x -> do
+          let errmsg = "Extract pubLevel error: " <> (U.str2bs . show) x
           Colog.logWarning $ decodeUtf8 errmsg
           HESP.sendMsg clientSock $ mkGeneralPushError lcmd errmsg
 
@@ -194,7 +190,7 @@ processPub sock ctx lcmd cid topic payloads = do
 -- Messages send to client
 
 {-# INLINE mkHandshakeRespSucc #-}
-mkHandshakeRespSucc :: ClientId
+mkHandshakeRespSucc :: T.ClientId
                     -> HESP.Message
 mkHandshakeRespSucc cid =
   HESP.mkArrayFromList [ HESP.mkBulkString "hi"
@@ -203,7 +199,7 @@ mkHandshakeRespSucc cid =
                        ]
 
 {-# INLINE mkSPutResp #-}
-mkSPutResp :: ClientId
+mkSPutResp :: T.ClientId
            -> ByteString
            -> Word64
            -> Bool

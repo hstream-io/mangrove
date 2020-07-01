@@ -30,6 +30,7 @@ library
                     Mangrove.Store
                     Mangrove.Utils
   other-modules:    Mangrove.Server
+                    Mangrove.Server.Response
                     Mangrove.Types
   hs-source-dirs:   src
   build-depends:    base                 >= 4.9 && < 5

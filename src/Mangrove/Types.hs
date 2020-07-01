@@ -39,6 +39,7 @@ module Mangrove.Types
   , clientSocket
   , getClientOption
   , extractClientPubLevel
+  , extractClientSubLevel
 
     -- * Client requests
   , RequestType (..)
@@ -69,10 +70,11 @@ import           Data.Word                   (Word64)
 import           GHC.Conc                    (TVar, atomically, newTVarIO,
                                               readTVar, readTVarIO, writeTVar)
 import           GHC.Generics                (Generic)
-import qualified Network.HESP                as HESP
-import qualified Network.HESP.Commands       as HESP
 import           Network.Socket              (Socket)
 import qualified Network.Socket              as NS
+
+import qualified Network.HESP                as HESP
+import qualified Network.HESP.Commands       as HESP
 
 -------------------------------------------------------------------------------
 
@@ -207,13 +209,13 @@ clientSocket :: ClientStatus -> Socket
 clientSocket = clientSock
 
 getClientOption :: HESP.Message -> ClientStatus -> Maybe HESP.Message
-getClientOption key ClientStatus{ clientOptions = opts } =
-  Map.lookup key opts
+getClientOption key ClientStatus{ clientOptions = opts } = Map.lookup key opts
 
 extractClientPubLevel :: ClientStatus -> Either ByteString Integer
-extractClientPubLevel ClientStatus{ clientOptions = opts } = do
-  value <- HESP.extractMapField opts (HESP.mkBulkString "pubLevel")
-  validateInteger value "pubLevel"
+extractClientPubLevel = extractClientIntOptions "pubLevel"
+
+extractClientSubLevel :: ClientStatus -> Either ByteString Integer
+extractClientSubLevel = extractClientIntOptions "subLevel"
 
 -------------------------------------------------------------------------------
 -- Client requests
@@ -222,7 +224,7 @@ data RequestType
   = Handshake (Map HESP.Message HESP.Message)
   | SPut ClientId ByteString ByteString
   | SPuts ClientId ByteString (V.Vector ByteString)
-  | SGet ByteString (Maybe Word64) (Maybe Word64) Integer Integer
+  | SGet ClientId ByteString (Maybe Word64) (Maybe Word64) Integer Integer
   deriving (Show, Eq)
 
 -------------------------------------------------------------------------------
@@ -260,3 +262,10 @@ level action = \case
 validateInteger :: HESP.Message -> ByteString -> Either ByteString Integer
 validateInteger (HESP.Integer x) _ = Right x
 validateInteger _ label            = Left $ label <> " must be an integer."
+
+extractClientIntOptions :: ByteString
+                        -> ClientStatus
+                        -> Either ByteString Integer
+extractClientIntOptions label ClientStatus{ clientOptions = opts } = do
+  value <- HESP.extractMapField opts (HESP.mkBulkString label)
+  validateInteger value label

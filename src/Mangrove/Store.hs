@@ -10,7 +10,7 @@ import           Control.Exception      (Exception, try)
 import           Control.Monad.IO.Class (MonadIO)
 import           Control.Monad.Reader   (runReaderT)
 import           Data.ByteString        (ByteString)
-import           Data.Either            (isLeft, fromLeft, fromRight)
+import           Data.Either            (fromLeft, fromRight, isLeft)
 import           Data.Vector            (Vector)
 import qualified Data.Vector            as V
 import           Streamly               (Serial, serially)

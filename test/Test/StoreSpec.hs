@@ -11,7 +11,7 @@ import           System.IO.Temp       (withSystemTempDirectory)
 import           Test.Hspec
 
 import qualified Log.Store.Base       as Store
-import           Mangrove.Store       (sget, sput)
+import           Mangrove.Store       (sgetAll, sput)
 
 spec :: Spec
 spec = do
@@ -32,7 +32,7 @@ putget ctx = do
   case r of
     Left _        -> return False
     Right entryid -> do
-      r' <- (sget ctx topic (Just entryid) Nothing 0 10) :: IO (Either SomeException [(Store.Entry, Store.EntryID)])
+      r' <- (sgetAll ctx topic (Just entryid) Nothing 10 0) :: IO (Either SomeException [(Store.Entry, Store.EntryID)])
       case r' of
         Right [(entry, entryid')] ->
           return $ entryid' == entryid && entry == payload

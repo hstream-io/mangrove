@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
 
@@ -138,19 +139,25 @@ processSGet sock ctx (SGet cid topic sid eid maxn offset) = do
       let errmsg = "ClientID " <> T.packClientIdBS cid <> " not found."
       Colog.logWarning $ decodeUtf8 errmsg
       HESP.sendMsg sock $ I.mkGeneralPushError "sget" errmsg
-    Just _client -> do
+    Just client -> do
       Colog.logDebug $ "Reading " <> decodeUtf8 topic <> " ..."
-      r <- liftIO $ Store.sget ctx topic sid eid offset maxn
-      case r of
-        Left e   -> do
-          Colog.logException (e :: SomeException)
-          let resp = I.mkSGetRespFail cid topic
-          Colog.logDebug $ "Sending: " <> (Text.pack . show) resp
-          HESP.sendMsg sock resp
-        Right xs -> do
-          let resp = I.mkSGetRespSucc cid topic xs
-          Colog.logDebug $ "Sending: " <> (Text.pack . show) resp
-          HESP.sendMsg sock resp
+      let clientSock = T.clientSocket client
+      -- NOTE: maxn and offset must not exceed maxBound::Int
+      Store.sget ctx topic sid eid (fromInteger maxn) (fromInteger offset) $
+        \case
+          Store.SgetStep xs -> do
+            let resps = map (I.mkSGetRespSucc cid topic) xs
+            Colog.logDebug $ "SGET sending OK: " <> decodeUtf8 topic
+            HESP.sendMsgs clientSock resps
+          Store.SgetDone    -> do
+            let resp = I.mkSGetRespDone cid topic
+            Colog.logDebug $ "SGET sending DONE: " <> decodeUtf8 topic
+            HESP.sendMsg clientSock resp
+          Store.SgetFail e  -> do
+            Colog.logException (e :: SomeException)
+            let resp = I.mkSGetRespFail cid topic
+            Colog.logDebug $ "SGET sending ERR: " <> decodeUtf8 topic
+            HESP.sendMsg clientSock resp
   return $ Just ()
 processSGet _ _ _ = return Nothing
 

@@ -74,7 +74,9 @@ sput :: Exception e
      -> ByteString          -- ^ topic
      -> ByteString          -- ^ payload
      -> IO (Either e LogStore.EntryID)
-sput db topic payload = try $ appendEntry db topic payload
+sput db topic payload = try $ do
+  handle <- openWrite db topic
+  appendEntry db handle payload
 
 -- | Put elements to a stream.
 --
@@ -85,12 +87,16 @@ sputs :: Exception e
       -> Vector ByteString   -- ^ payloads
       -> IO (Either (Vector LogStore.EntryID, e) (Vector LogStore.EntryID))
 sputs db topic payloads = do
-  rs <- V.mapM (sput db topic) payloads
-  case V.findIndex isLeft rs of
-    Just i  ->
-      let xs = V.unsafeSlice 0 i rs
-       in return $ Left (V.map fromRight' xs, fromLeft'(V.unsafeIndex rs i))
-    Nothing -> return $ Right $ V.map fromRight' rs
+  ehandle <- try $ openWrite db topic
+  case ehandle of
+    Left e -> return $ Left (V.empty, e)
+    Right handle -> do
+      rs <- V.mapM (try . appendEntry db handle) payloads
+      case V.findIndex isLeft rs of
+        Just i  ->
+          let xs = V.unsafeSlice 0 i rs
+           in return $ Left (V.map fromRight' xs, fromLeft'(V.unsafeIndex rs i))
+        Nothing -> return $ Right $ V.map fromRight' rs
 
 -------------------------------------------------------------------------------
 -- Log-store
@@ -121,12 +127,19 @@ readEntries db topic start end = S.toList =<< readEntry db topic start end
 
 appendEntry :: MonadIO m
             => LogStore.Context
+            -> LogStore.LogHandle
             -> ByteString
-            -> ByteString
-            -> m (LogStore.EntryID)
-appendEntry db topic payload = runReaderT f db
+            -> m LogStore.EntryID
+appendEntry db handle payload = runReaderT f db
   where
-    f = LogStore.open key wopts >>= flip LogStore.appendEntry payload
+    f = LogStore.appendEntry handle payload
+
+openWrite :: MonadIO m
+          => LogStore.Context
+          -> ByteString
+          -> m LogStore.LogHandle
+openWrite db topic = runReaderT (LogStore.open key wopts) db
+  where
     key = bs2str topic
     wopts = LogStore.defaultOpenOptions { LogStore.writeMode       = True
                                         , LogStore.createIfMissing = True

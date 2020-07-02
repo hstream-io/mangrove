@@ -4,7 +4,7 @@
 module Main where
 
 import qualified Colog
-import           Control.Exception      (bracket)
+import           Control.Exception      (SomeException, bracket)
 import           Control.Monad          (unless)
 import           Control.Monad.IO.Class (liftIO)
 import           Control.Monad.Reader   (ask, runReaderT)
@@ -55,8 +55,12 @@ runServer ctx = do
 setSocketOptions :: Socket -> IO ()
 setSocketOptions = HESP.setDefaultSocketOptions
 
-clean :: Socket -> App ()
-clean sock = do
+clean :: (Either SomeException a, Socket) -> App ()
+clean (Left e, sock)  = Colog.logException e >> onCloseSocket sock
+clean (Right _, sock) = onCloseSocket sock
+
+onCloseSocket :: Socket -> App ()
+onCloseSocket sock = do
   env <- ask
   Colog.logInfo $ "Clean server status..."
   let status = serverStatus env

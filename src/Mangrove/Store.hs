@@ -1,19 +1,23 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Mangrove.Store
-  ( sget
+  ( SgetChunks (..)
+  , sget
+  , sgetAll
+
   , sput
   , sputs
   ) where
 
-import           Control.Exception      (Exception, try)
-import           Control.Monad.IO.Class (MonadIO)
+import           Control.Exception      (Exception, SomeException, try)
+import           Control.Monad.IO.Class (MonadIO, liftIO)
 import           Control.Monad.Reader   (runReaderT)
 import           Data.ByteString        (ByteString)
 import           Data.Either            (fromLeft, fromRight, isLeft)
 import           Data.Vector            (Vector)
 import qualified Data.Vector            as V
-import           Streamly               (Serial, serially)
+import           Streamly               (Serial)
 import qualified Streamly.Prelude       as S
 
 import qualified Log.Store.Base         as LogStore
@@ -21,18 +25,48 @@ import           Mangrove.Utils         (bs2str)
 
 -------------------------------------------------------------------------------
 
--- | Get a "snapshot" of elements from a stream.
-sget :: Exception e
+data SgetChunks = SgetStep [Element]
+                | SgetDone
+                | SgetFail SomeException
+
+-- | Get a "snapshot" of elements.
+sget :: forall m . MonadIO m
      => LogStore.Context          -- ^ db context
      -> ByteString                -- ^ topic
      -> Maybe LogStore.EntryID    -- ^ start entry id
      -> Maybe LogStore.EntryID    -- ^ end entry id
-     -> Integer                   -- ^ offset
-     -> Integer                   -- ^ max size
-     -> IO (Either e [Element])
-sget db topic start end offset maxn = try $ do
+     -> Int                       -- ^ max chunk size
+     -> Int                       -- ^ offset
+     -> (SgetChunks -> m ())
+     -> m ()
+sget db topic start end n offset process = stream >>= go
+  where
+    stream :: m (Serial Element)
+    stream = liftIO $ S.drop offset <$> readEntry db topic start end
+    go :: Serial Element -> m ()
+    go s = do
+      e_trunks <- liftIO $ try . S.toList $ S.take n s
+      case e_trunks of
+        Left e       -> process $ SgetFail e
+        Right trunks ->
+          if null trunks
+             then process SgetDone
+             else process (SgetStep trunks) >> (go $ S.drop n s)
+
+-- | Get a "snapshot" of elements.
+--
+-- Warning: working on large lists could be very inefficient.
+sgetAll :: Exception e
+        => LogStore.Context          -- ^ db context
+        -> ByteString                -- ^ topic
+        -> Maybe LogStore.EntryID    -- ^ start entry id
+        -> Maybe LogStore.EntryID    -- ^ end entry id
+        -> Int                       -- ^ max size
+        -> Int                       -- ^ offset
+        -> IO (Either e [Element])
+sgetAll db topic start end maxn offset = try $ do
   xs <- readEntries db topic start end
-  return $ take (fromInteger maxn) . drop (fromInteger offset) $ xs
+  return $ take maxn . drop offset $ xs
 
 -- | Put an element to a stream.
 sput :: Exception e
@@ -75,13 +109,15 @@ readEntry db topic start end = runReaderT f db
     key = bs2str topic
     ropts = LogStore.defaultOpenOptions
 
+-- | Read all entries into list.
+--
+-- Warning: working on large lists could be very inefficient.
 readEntries :: LogStore.Context
             -> ByteString
             -> Maybe LogStore.EntryID
             -> Maybe LogStore.EntryID
             -> IO [Element]
-readEntries db topic start end =
-  S.toList . serially =<< readEntry db topic start end
+readEntries db topic start end = S.toList =<< readEntry db topic start end
 
 appendEntry :: MonadIO m
             => LogStore.Context

@@ -48,32 +48,30 @@ mkSPutResp cid topic entryID res =
 {-# INLINE mkSGetRespSucc #-}
 mkSGetRespSucc :: T.ClientId
                -> ByteString
-               -> [(ByteString, Word64)]
+               -> (ByteString, Word64)
                -> HESP.Message
-mkSGetRespSucc cid topic contents =
-  let pair (p, i) = HESP.mkArrayFromList [ HESP.mkBulkString (U.encodeUtf8 i)
-                                         , HESP.mkBulkString p
-                                         ]
-   in HESP.mkPushFromList "sget" [ HESP.mkBulkString $ T.packClientIdBS cid
-                                 , HESP.mkBulkString topic
-                                 , HESP.mkBulkString "OK"
-                                 , HESP.mkArrayFromList $ map pair contents
-                                 ]
+mkSGetRespSucc cid topic (p, i) =
+  HESP.mkPushFromList "sget" [ HESP.mkBulkString $ T.packClientIdBS cid
+                             , HESP.mkBulkString topic
+                             , HESP.mkBulkString "OK"
+                             , HESP.mkBulkString (U.encodeUtf8 i)
+                             , HESP.mkBulkString p
+                             ]
 
 {-# INLINE mkSGetRespDone #-}
 mkSGetRespDone :: T.ClientId -> ByteString -> HESP.Message
 mkSGetRespDone cid topic =
   HESP.mkPushFromList "sget" [ HESP.mkBulkString $ T.packClientIdBS cid
-                             , HESP.mkBulkString "DONE"
                              , HESP.mkBulkString topic
+                             , HESP.mkBulkString "DONE"
                              ]
 
 {-# INLINE mkSGetRespFail #-}
 mkSGetRespFail :: T.ClientId -> ByteString -> HESP.Message
 mkSGetRespFail cid topic =
   HESP.mkPushFromList "sget" [ HESP.mkBulkString $ T.packClientIdBS cid
-                             , HESP.mkBulkString "ERR"
                              , HESP.mkBulkString topic
+                             , HESP.mkBulkString "ERR"
                              , HESP.mkBulkString "Message fetching failed"
                              ]
 

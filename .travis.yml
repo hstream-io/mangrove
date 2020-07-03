@@ -101,12 +101,12 @@ install:
     echo "source-repository-package"                                          >> cabal.project
     echo "  type:     git"                                                    >> cabal.project
     echo "  location: https://github.com/hstream-io/log-store"                >> cabal.project
-    echo "  tag:      1e427d354847273b637266936fda2e69ee415e45"               >> cabal.project
+    echo "  tag:      f77b661b1356520b047074bd9e238dc3b8c13f1c"               >> cabal.project
     echo ""                                                                   >> cabal.project
     echo "source-repository-package"                                          >> cabal.project
     echo "  type:     git"                                                    >> cabal.project
     echo "  location: https://github.com/hstream-io/haskell-rocksdb-bindings" >> cabal.project
-    echo "  tag:      e62ed5d0f4d9eedd56ae01c49185a06465ba3eb3"               >> cabal.project
+    echo "  tag:      690de8d425f55a28dca07c5b58f9d7bc6571d018"               >> cabal.project
   - "for pkg in $($HCPKG list --simple-output); do echo $pkg | sed 's/-[^-]*$//' | (grep -vE -- '^(mangrove)$' || true) | sed 's/^/constraints: /' | sed 's/$/ installed/' >> cabal.project.local; done"
   - cat cabal.project || true
   - cat cabal.project.local || true
@@ -142,12 +142,12 @@ script:
     echo "source-repository-package"                                          >> cabal.project
     echo "  type:     git"                                                    >> cabal.project
     echo "  location: https://github.com/hstream-io/log-store"                >> cabal.project
-    echo "  tag:      1e427d354847273b637266936fda2e69ee415e45"               >> cabal.project
+    echo "  tag:      f77b661b1356520b047074bd9e238dc3b8c13f1c"               >> cabal.project
     echo ""                                                                   >> cabal.project
     echo "source-repository-package"                                          >> cabal.project
     echo "  type:     git"                                                    >> cabal.project
     echo "  location: https://github.com/hstream-io/haskell-rocksdb-bindings" >> cabal.project
-    echo "  tag:      e62ed5d0f4d9eedd56ae01c49185a06465ba3eb3"               >> cabal.project
+    echo "  tag:      690de8d425f55a28dca07c5b58f9d7bc6571d018"               >> cabal.project
   - "for pkg in $($HCPKG list --simple-output); do echo $pkg | sed 's/-[^-]*$//' | (grep -vE -- '^(mangrove)$' || true) | sed 's/^/constraints: /' | sed 's/$/ installed/' >> cabal.project.local; done"
   - cat cabal.project || true
   - cat cabal.project.local || true

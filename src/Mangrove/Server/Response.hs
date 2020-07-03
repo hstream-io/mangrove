@@ -3,7 +3,8 @@
 -- | Messages send to client.
 module Mangrove.Server.Response
   ( mkHandshakeRespSucc
-  , mkSPutResp
+  , mkSPutRespSucc
+  , mkSPutRespFail
   , mkSGetRespSucc
   , mkSGetRespDone
   , mkSGetRespFail
@@ -29,21 +30,28 @@ mkHandshakeRespSucc cid =
                        , HESP.mkBulkString $ T.packClientIdBS cid
                        ]
 
-{-# INLINE mkSPutResp #-}
-mkSPutResp :: T.ClientId
-           -> ByteString
-           -> Word64
-           -> Bool
-           -> HESP.Message
-mkSPutResp cid topic entryID res =
-  let status = if res then "OK" else "ERR"
-      fin    = if res then U.encodeUtf8 entryID
-                      else "Message storing failed."
-   in HESP.mkPushFromList "sput" [ HESP.mkBulkString $ T.packClientIdBS cid
-                                 , HESP.mkBulkString topic
-                                 , HESP.mkBulkString status
-                                 , HESP.mkBulkString fin
-                                 ]
+{-# INLINE mkSPutRespSucc #-}
+mkSPutRespSucc :: T.ClientId
+               -> ByteString
+               -> Word64
+               -> HESP.Message
+mkSPutRespSucc cid topic entryID =
+  HESP.mkPushFromList "sput" [ HESP.mkBulkString $ T.packClientIdBS cid
+                             , HESP.mkBulkString topic
+                             , HESP.mkBulkString "OK"
+                             , HESP.mkBulkString $ U.encodeUtf8 entryID
+                             ]
+
+{-# INLINE mkSPutRespFail #-}
+mkSPutRespFail :: T.ClientId
+               -> ByteString
+               -> HESP.Message
+mkSPutRespFail cid topic =
+  HESP.mkPushFromList "sput" [ HESP.mkBulkString $ T.packClientIdBS cid
+                             , HESP.mkBulkString topic
+                             , HESP.mkBulkString "ERR"
+                             , HESP.mkBulkString "Message storing failed."
+                             ]
 
 {-# INLINE mkSGetRespSucc #-}
 mkSGetRespSucc :: T.ClientId

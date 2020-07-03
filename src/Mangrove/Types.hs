@@ -39,6 +39,7 @@ module Mangrove.Types
   , clientSocket
   , getClientOption
   , extractClientPubLevel
+  , extractClientPubMethod
   , extractClientSubLevel
 
     -- * Client requests
@@ -213,6 +214,9 @@ getClientOption key ClientStatus{ clientOptions = opts } = Map.lookup key opts
 
 extractClientPubLevel :: ClientStatus -> Either ByteString Integer
 extractClientPubLevel = extractClientIntOptions "pubLevel"
+
+extractClientPubMethod :: ClientStatus -> Either ByteString Integer
+extractClientPubMethod = extractClientIntOptions "pubMethod"
 
 extractClientSubLevel :: ClientStatus -> Either ByteString Integer
 extractClientSubLevel = extractClientIntOptions "subLevel"

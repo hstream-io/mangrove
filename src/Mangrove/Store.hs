@@ -8,6 +8,7 @@ module Mangrove.Store
 
   , sput
   , sputs
+  , sputsAtom
   ) where
 
 import           Control.Exception      (Exception, SomeException, try)
@@ -98,6 +99,20 @@ sputs db topic payloads = do
            in return $ Left (V.map fromRight' xs, fromLeft'(V.unsafeIndex rs i))
         Nothing -> return $ Right $ V.map fromRight' rs
 
+-- | Put elements to a stream.
+--
+-- The operation is atomic.
+sputsAtom :: Exception e
+          => LogStore.Context    -- ^ db context
+          -> ByteString          -- ^ topic
+          -> Vector ByteString   -- ^ payloads
+          -> IO (Either (Vector LogStore.EntryID, e) (Vector LogStore.EntryID))
+sputsAtom db topic payloads = do
+  rs <- try $ openWrite db topic >>= \h -> appendEntriesAtom db h payloads
+  case rs of
+    Left e       -> return $ Left (V.empty, e)
+    Right xs     -> return $ Right xs
+
 -------------------------------------------------------------------------------
 -- Log-store
 
@@ -133,6 +148,15 @@ appendEntry :: MonadIO m
 appendEntry db handle payload = runReaderT f db
   where
     f = LogStore.appendEntry handle payload
+
+appendEntriesAtom :: MonadIO m
+                  => LogStore.Context
+                  -> LogStore.LogHandle
+                  -> Vector ByteString
+                  -> m (Vector LogStore.EntryID)
+appendEntriesAtom db handle payloads = runReaderT f db
+  where
+    f = LogStore.appendEntries handle payloads
 
 openWrite :: MonadIO m
           => LogStore.Context

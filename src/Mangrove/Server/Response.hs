@@ -45,12 +45,13 @@ mkSPutRespSucc cid topic entryID =
 {-# INLINE mkSPutRespFail #-}
 mkSPutRespFail :: T.ClientId
                -> ByteString
+               -> ByteString
                -> HESP.Message
-mkSPutRespFail cid topic =
+mkSPutRespFail cid topic errmsg =
   HESP.mkPushFromList "sput" [ HESP.mkBulkString $ T.packClientIdBS cid
                              , HESP.mkBulkString topic
                              , HESP.mkBulkString "ERR"
-                             , HESP.mkBulkString "Message storing failed."
+                             , HESP.mkBulkString errmsg
                              ]
 
 {-# INLINE mkSGetRespSucc #-}

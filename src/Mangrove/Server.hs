@@ -178,51 +178,55 @@ processPub sock ctx lcmd cid topic payloads = do
       HESP.sendMsg sock $ I.mkGeneralPushError lcmd errmsg
     Just client -> do
       Colog.logDebug $ "Writing " <> decodeUtf8 topic <> " ..."
-      let clientPubLevel  = T.extractClientPubLevel  client
-          clientPubMethod = T.extractClientPubMethod client
-      let clientSock      = T.clientSocket           client
-      case clientPubMethod of
+      let e_level  = T.extractClientPubLevel  client
+          e_method = T.extractClientPubMethod client
+      let clientSock = T.clientSocket client
+      case e_method of
         Right 0 -> do
           r <- liftIO $ Store.sputsAtom ctx topic payloads
-          helper clientSock clientPubLevel r
+          pubRespByLevel clientSock lcmd cid topic e_level r
         Right 1 -> do
           r <- liftIO $ Store.sputs ctx topic payloads
-          helper clientSock clientPubLevel r
+          pubRespByLevel clientSock lcmd cid topic e_level r
         Right x -> do
-          let errmsg = "Unsupported pubMethod: " <> (U.str2bs . show) x
+          let errmsg = "Unsupported pub-method: " <> (U.str2bs . show) x
+          Colog.logWarning $ decodeUtf8 errmsg
+          HESP.sendMsg sock $ I.mkGeneralPushError lcmd errmsg
+        Left x -> do
+          let errmsg = "Extract pub-method error: " <> (U.str2bs . show) x
           Colog.logWarning $ decodeUtf8 errmsg
           HESP.sendMsg clientSock $ I.mkGeneralPushError lcmd errmsg
-        Left  x -> do
-          let errmsg = "Extract pubMethod error: " <> (U.str2bs . show) x
-          Colog.logWarning $ decodeUtf8 errmsg
-          HESP.sendMsg clientSock $ I.mkGeneralPushError lcmd errmsg
-  where
-    helper :: Socket
-           -> Either ByteString Integer
-           -> Either (Vector EntryID, SomeException) (Vector EntryID)
-           -> App ()
-    helper clientSock clientPubLevel r = case clientPubLevel of
-      Right 0 -> return ()
-      Right 1 -> case r of
-        Left (entryIDs, e) -> do
-          Colog.logException e
-          let succIds = V.map (I.mkSPutRespSucc cid topic) entryIDs
-              errResp = I.mkSPutRespFail cid topic
-          let resps = V.snoc succIds errResp
-          Colog.logDebug $ Text.pack ("Sending: " ++ show resps)
-          HESP.sendMsgs clientSock resps
-        Right entryIDs     -> do
-          let resps = V.map (I.mkSPutRespSucc cid topic) entryIDs
-          Colog.logDebug $ Text.pack ("Sending: " ++ show resps)
-          HESP.sendMsgs clientSock resps
-      Right x -> do
-        let errmsg = "Unsupported pubLevel: " <> (U.str2bs . show) x
-        Colog.logWarning $ decodeUtf8 errmsg
-        HESP.sendMsg clientSock $ I.mkGeneralPushError lcmd errmsg
-      Left x  -> do
-        let errmsg = "Extract pubLevel error: " <> (U.str2bs . show) x
-        Colog.logWarning $ decodeUtf8 errmsg
-        HESP.sendMsg clientSock $ I.mkGeneralPushError lcmd errmsg
+
+pubRespByLevel :: Socket
+               -> ByteString
+               -> T.ClientId
+               -> ByteString
+               -> Either ByteString Integer
+               -> Either (Vector EntryID, SomeException) (Vector EntryID)
+               -> App ()
+pubRespByLevel clientSock lcmd cid topic level r =
+  case level of
+    Right 0 -> return ()
+    Right 1 -> case r of
+      Left (entryIDs, e) -> do
+        Colog.logException e
+        let succIds = V.map (I.mkSPutRespSucc cid topic) entryIDs
+            errResp = I.mkSPutRespFail cid topic "Message storing failed."
+        let resps = V.snoc succIds errResp
+        Colog.logDebug $ Text.pack ("Sending: " ++ show resps)
+        HESP.sendMsgs clientSock resps
+      Right entryIDs     -> do
+        let resps = V.map (I.mkSPutRespSucc cid topic) entryIDs
+        Colog.logDebug $ Text.pack ("Sending: " ++ show resps)
+        HESP.sendMsgs clientSock resps
+    Right x -> do
+      let errmsg = "Unsupported pub-level: " <> (U.str2bs . show) x
+      Colog.logWarning $ decodeUtf8 errmsg
+      HESP.sendMsg clientSock $ I.mkGeneralPushError lcmd errmsg
+    Left x  -> do
+      let errmsg = "Extract pub-level error: " <> (U.str2bs . show) x
+      Colog.logWarning $ decodeUtf8 errmsg
+      HESP.sendMsg clientSock $ I.mkGeneralPushError lcmd errmsg
 
 -------------------------------------------------------------------------------
 -- Helpers

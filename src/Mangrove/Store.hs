@@ -96,7 +96,8 @@ sputs db topic payloads = do
       case V.findIndex isLeft rs of
         Just i  ->
           let xs = V.unsafeSlice 0 i rs
-           in return $ Left (V.map fromRight' xs, fromLeft'(V.unsafeIndex rs i))
+              ex = V.unsafeIndex rs i
+           in return $ Left (V.map fromRight' xs, fromLeft' ex)
         Nothing -> return $ Right $ V.map fromRight' rs
 
 -- | Put elements to a stream.
@@ -110,8 +111,8 @@ sputsAtom :: Exception e
 sputsAtom db topic payloads = do
   rs <- try $ openWrite db topic >>= \h -> appendEntriesAtom db h payloads
   case rs of
-    Left e       -> return $ Left (V.empty, e)
-    Right xs     -> return $ Right xs
+    Left e   -> return $ Left (V.empty, e)
+    Right xs -> return $ Right xs
 
 -------------------------------------------------------------------------------
 -- Log-store

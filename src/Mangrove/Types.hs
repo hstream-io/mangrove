@@ -213,13 +213,13 @@ getClientOption :: HESP.Message -> ClientStatus -> Maybe HESP.Message
 getClientOption key ClientStatus{ clientOptions = opts } = Map.lookup key opts
 
 extractClientPubLevel :: ClientStatus -> Either ByteString Integer
-extractClientPubLevel = extractClientIntOptions "pubLevel"
+extractClientPubLevel = extractClientIntOptions "pub-level"
 
 extractClientPubMethod :: ClientStatus -> Either ByteString Integer
-extractClientPubMethod = extractClientIntOptions "pubMethod"
+extractClientPubMethod = extractClientIntOptions "pub-method"
 
 extractClientSubLevel :: ClientStatus -> Either ByteString Integer
-extractClientSubLevel = extractClientIntOptions "subLevel"
+extractClientSubLevel = extractClientIntOptions "sub-level"
 
 -------------------------------------------------------------------------------
 -- Client requests

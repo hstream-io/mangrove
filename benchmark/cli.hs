@@ -127,7 +127,8 @@ sputRequest clientid topic payload =
 
 preparePubRequest :: Socket -> Integer -> IO ByteString
 preparePubRequest sock pubLevel =
-  let mapping = [ (HESP.mkBulkString "pubLevel", HESP.Integer pubLevel)
+  let mapping = [ (HESP.mkBulkString "pub-level", HESP.Integer pubLevel)
+                , (HESP.mkBulkString "pub-method", HESP.Integer 1)
                 ]
       hiCommand = HESP.mkArrayFromList [ HESP.mkBulkString "hi"
                                        , HESP.mkMapFromList mapping

@@ -30,7 +30,7 @@ main = do
   createDirectoryIfMissing True dbPath
   -- run server
   bracket
-    (LogStore.initialize $ LogStore.UserDefinedEnv (LogStore.Config dbPath))
+    (LogStore.initialize $ LogStore.Config dbPath)
     (runReaderT LogStore.shutDown)
     (Mangrove.runApp env . runServer)
 

@@ -22,7 +22,7 @@ streamPutGet = describe "Stream Put Get operations" $ do
   it "put one element to db and then get it out" $ do
     withSystemTempDirectory "rocksdb-test" $ \dbdir -> do
       bracket
-        (Store.initialize $ Store.UserDefinedEnv (Store.Config dbdir))
+        (Store.initialize $ Store.Config dbdir)
         (runReaderT Store.shutDown)
         putget `shouldReturn` True
 

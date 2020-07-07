@@ -19,7 +19,7 @@ import           Data.Word                (Word64)
 import           Network.Socket           (Socket)
 import           Text.Read                (readMaybe)
 
-import           Log.Store.Base           hiding (Env)
+import           Log.Store.Base
 import qualified Mangrove.Server.Response as I
 import qualified Mangrove.Store           as Store
 import           Mangrove.Types           (App, Env (..), RequestType (..))

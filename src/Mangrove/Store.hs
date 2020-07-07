@@ -16,6 +16,7 @@ import           Control.Monad.IO.Class (MonadIO, liftIO)
 import           Control.Monad.Reader   (runReaderT)
 import           Data.ByteString        (ByteString)
 import           Data.Either            (fromLeft, fromRight, isLeft)
+import           Data.Text              (pack)
 import           Data.Vector            (Vector)
 import qualified Data.Vector            as V
 import           Streamly               (Serial)
@@ -127,7 +128,7 @@ readEntry :: MonadIO m
           -> m (Serial Element)
 readEntry db topic start end = runReaderT f db
   where
-    f = LogStore.open key ropts >>= \hd -> LogStore.readEntries hd start end
+    f = LogStore.open (pack key) ropts >>= \hd -> LogStore.readEntries hd start end
     key = bs2str topic
     ropts = LogStore.defaultOpenOptions
 
@@ -163,7 +164,7 @@ openWrite :: MonadIO m
           => LogStore.Context
           -> ByteString
           -> m LogStore.LogHandle
-openWrite db topic = runReaderT (LogStore.open key wopts) db
+openWrite db topic = runReaderT (LogStore.open (pack key) wopts) db
   where
     key = bs2str topic
     wopts = LogStore.defaultOpenOptions { LogStore.writeMode       = True

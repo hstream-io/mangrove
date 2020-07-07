@@ -1,8 +1,8 @@
 # Host that the server listening on
-host: localhost
+host: 0.0.0.0
 
 # Port that the server listening on
-port: 20202
+port: 6560
 
 # Path to the database on the disk
 db-path: /tmp/db-test

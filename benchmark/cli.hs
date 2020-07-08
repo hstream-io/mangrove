@@ -61,7 +61,7 @@ connectionOtpion =
     <*> O.option O.auto (O.long "port"
                       <> O.short 'p'
                       <> O.showDefault
-                      <> O.value 20202
+                      <> O.value 6560
                       <> O.metavar "PORT"
                       <> O.help "Server port")
 
@@ -76,6 +76,7 @@ data SputOptions =
   SputOptions { numOfBytes :: Int
               , topicName  :: TopicName
               , pubLevel   :: Int
+              , pubMethod  :: Int
               }
 
 data TopicName = TopicName String | RandomTopicName
@@ -90,6 +91,9 @@ sputOptions =
     <*> O.option O.auto (O.long "pubLevel"
                       <> O.short 'l'
                       <> O.help "PubLevel, 0 or 1")
+    <*> O.option O.auto (O.long "pubMethod"
+                      <> O.short 'm'
+                      <> O.help "PubMethod, 0 or 1")
 
 topicOption :: Parser TopicName
 topicOption = a_topic <|> b_topic
@@ -101,7 +105,7 @@ topicOption = a_topic <|> b_topic
 
 sput :: Socket -> SputOptions -> IO ()
 sput sock SputOptions{..} = do
-  clientid <- preparePubRequest sock (fromIntegral pubLevel)
+  clientid <- preparePubRequest sock (fromIntegral pubLevel) (fromIntegral pubMethod)
   showSpeed "sput" numOfBytes (action clientid pubLevel)
   where
     action clientid level = do
@@ -125,10 +129,10 @@ sputRequest clientid topic payload =
            ]
    in HESP.mkArrayFromList cs
 
-preparePubRequest :: Socket -> Integer -> IO ByteString
-preparePubRequest sock pubLevel =
+preparePubRequest :: Socket -> Integer -> Integer -> IO ByteString
+preparePubRequest sock pubLevel pubMethod =
   let mapping = [ (HESP.mkBulkString "pub-level", HESP.Integer pubLevel)
-                , (HESP.mkBulkString "pub-method", HESP.Integer 1)
+                , (HESP.mkBulkString "pub-method", HESP.Integer pubMethod)
                 ]
       hiCommand = HESP.mkArrayFromList [ HESP.mkBulkString "hi"
                                        , HESP.mkMapFromList mapping

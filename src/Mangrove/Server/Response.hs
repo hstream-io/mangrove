@@ -3,11 +3,15 @@
 -- | Messages send to client.
 module Mangrove.Server.Response
   ( mkHandshakeRespSucc
+
   , mkSPutRespSucc
   , mkSPutRespFail
-  , mkSGetRespSucc
-  , mkSGetRespDone
-  , mkSGetRespFail
+
+  , mkElementResp
+
+  , mkCmdPush
+  , mkCmdPushError
+
   , mkGeneralError
   , mkGeneralPushError
   ) where
@@ -54,35 +58,46 @@ mkSPutRespFail cid topic errmsg =
                              , HESP.mkBulkString errmsg
                              ]
 
-{-# INLINE mkSGetRespSucc #-}
-mkSGetRespSucc :: T.ClientId
+{-# INLINE mkElementResp #-}
+mkElementResp :: T.ClientId
+              -> ByteString
+              -> ByteString
+              -> (ByteString, Word64)
+              -> HESP.Message
+mkElementResp cid lcmd topic (p, i) =
+  HESP.mkPushFromList lcmd [ HESP.mkBulkString $ T.packClientIdBS cid
+                           , HESP.mkBulkString topic
+                           , HESP.mkBulkString "OK"
+                           , HESP.mkBulkString (U.encodeUtf8 i)
+                           , HESP.mkBulkString p
+                           ]
+
+-------------------------------------------------------------------------------
+
+{-# INLINE mkCmdPush #-}
+mkCmdPush :: T.ClientId
+          -> ByteString
+          -> ByteString
+          -> ByteString
+          -> HESP.Message
+mkCmdPush cid lcmd topic resp_type =
+  HESP.mkPushFromList lcmd [ HESP.mkBulkString $ T.packClientIdBS cid
+                           , HESP.mkBulkString topic
+                           , HESP.mkBulkString resp_type
+                           ]
+
+{-# INLINE mkCmdPushError #-}
+mkCmdPushError :: T.ClientId
                -> ByteString
-               -> (ByteString, Word64)
+               -> ByteString
+               -> ByteString
                -> HESP.Message
-mkSGetRespSucc cid topic (p, i) =
-  HESP.mkPushFromList "sget" [ HESP.mkBulkString $ T.packClientIdBS cid
-                             , HESP.mkBulkString topic
-                             , HESP.mkBulkString "OK"
-                             , HESP.mkBulkString (U.encodeUtf8 i)
-                             , HESP.mkBulkString p
-                             ]
-
-{-# INLINE mkSGetRespDone #-}
-mkSGetRespDone :: T.ClientId -> ByteString -> HESP.Message
-mkSGetRespDone cid topic =
-  HESP.mkPushFromList "sget" [ HESP.mkBulkString $ T.packClientIdBS cid
-                             , HESP.mkBulkString topic
-                             , HESP.mkBulkString "DONE"
-                             ]
-
-{-# INLINE mkSGetRespFail #-}
-mkSGetRespFail :: T.ClientId -> ByteString -> HESP.Message
-mkSGetRespFail cid topic =
-  HESP.mkPushFromList "sget" [ HESP.mkBulkString $ T.packClientIdBS cid
-                             , HESP.mkBulkString topic
-                             , HESP.mkBulkString "ERR"
-                             , HESP.mkBulkString "Message fetching failed"
-                             ]
+mkCmdPushError cid lcmd topic errmsg =
+  HESP.mkPushFromList lcmd [ HESP.mkBulkString $ T.packClientIdBS cid
+                           , HESP.mkBulkString topic
+                           , HESP.mkBulkString "ERR"
+                           , HESP.mkBulkString errmsg
+                           ]
 
 {-# INLINE mkGeneralError #-}
 mkGeneralError :: ByteString -> HESP.Message

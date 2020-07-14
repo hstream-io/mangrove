@@ -3,7 +3,7 @@ packages: ./*.cabal
 source-repository-package
   type: git
   location: https://github.com/hstream-io/hesp.git
-  tag: 148fca011a8eccb8794871d0d46e9e0a473549bf
+  tag: ac22865e0b4cc216941582b2da9f360918b98333
 
 source-repository-package
   type: git

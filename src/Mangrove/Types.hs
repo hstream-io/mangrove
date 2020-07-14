@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns               #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
@@ -15,9 +16,11 @@ module Mangrove.Types
   , App
   , runApp
 
-    -- * Server settings
-  , ServerSettings (..)
+  , Element
 
+    -- * Server
+    -- ** Server settings
+  , ServerSettings (..)
     -- * Server status
   , ServerStatus
   , newServerStatus
@@ -26,6 +29,8 @@ module Mangrove.Types
   , deleteClient
   , deleteClientsBy
   , deleteClientsBySocket
+
+    -- * Client
     -- ** Client id
   , ClientId
   , newClientId
@@ -35,12 +40,18 @@ module Mangrove.Types
   , getClientIdFromASCIIBytes'
     -- ** Client status
   , ClientStatus
-  , createClientStatus
+  , newClientStatus
   , clientSocket
   , getClientOption
   , extractClientPubLevel
   , extractClientPubMethod
   , extractClientSubLevel
+    -- ** Consumer
+  , insertConsumeStream
+  , tryInsertConsumeStream
+  , deleteClientConsume
+  , takeConsumeElements
+  , withConsumeElements
 
     -- * Client requests
   , RequestType (..)
@@ -48,6 +59,7 @@ module Mangrove.Types
 
 import qualified Colog
 import           Control.Applicative         ((<|>))
+import qualified Control.Concurrent.MVar     as Conc
 import           Control.DeepSeq             (NFData)
 import           Control.Monad.Base          (MonadBase)
 import           Control.Monad.IO.Class      (MonadIO)
@@ -68,16 +80,21 @@ import qualified Data.UUID                   as UUID
 import qualified Data.UUID.V4                as UUID
 import qualified Data.Vector                 as V
 import           Data.Word                   (Word64)
-import           GHC.Conc                    (TVar, atomically, newTVarIO,
-                                              readTVar, readTVarIO, writeTVar)
+import qualified GHC.Conc                    as Conc
 import           GHC.Generics                (Generic)
 import           Network.Socket              (Socket)
 import qualified Network.Socket              as NS
 
+import           Log.Store.Base              (Entry, EntryID)
+import           Mangrove.Streaming          (Serial)
+import qualified Mangrove.Streaming          as S
 import qualified Network.HESP                as HESP
 import qualified Network.HESP.Commands       as HESP
 
 -------------------------------------------------------------------------------
+
+type Topic = ByteString
+type Element = (Entry, EntryID)
 
 data Env m =
   Env { serverSettings :: ServerSettings m
@@ -140,40 +157,43 @@ instance Colog.HasLog (Env m) Colog.Message m where
 -- Server status
 
 data ServerStatus =
-  ServerStatus { serverClients :: TVar (HashMap ClientId ClientStatus)
+  ServerStatus { serverClients   :: !(Conc.TVar (HashMap ClientId ClientStatus))
                }
 
 newServerStatus :: IO ServerStatus
 newServerStatus = do
-  clients <- newTVarIO HMap.empty
-  return ServerStatus { serverClients = clients
+  clients <- Conc.newTVarIO HMap.empty
+  return ServerStatus { serverClients   = clients
                       }
 
 getClient :: ClientId -> ServerStatus -> IO (Maybe ClientStatus)
 getClient cid ServerStatus{..} = do
-  settings <- readTVarIO serverClients
+  settings <- Conc.readTVarIO serverClients
   return $ HMap.lookup cid settings
 
 insertClient :: ClientId -> ClientStatus -> ServerStatus -> IO ()
-insertClient cid options ServerStatus{..} = atomically $ do
-  s <- readTVar serverClients
-  writeTVar serverClients $! (HMap.insert cid options s)
+insertClient cid options ServerStatus{..} = Conc.atomically $ do
+  s <- Conc.readTVar serverClients
+  Conc.writeTVar serverClients $! (HMap.insert cid options s)
 
 -- | Remove the client for the specified 'ClientId' from
 -- 'ServerStatus' if present.
 deleteClient :: ClientId -> ServerStatus -> IO ()
-deleteClient cid ServerStatus{..} = atomically $ do
-  s <- readTVar serverClients
-  writeTVar serverClients $! (HMap.delete cid s)
+deleteClient cid ServerStatus{..} = Conc.atomically $ do
+  s <- Conc.readTVar serverClients
+  Conc.writeTVar serverClients $! (HMap.delete cid s)
 
 deleteClientsBy :: (ClientStatus -> Bool) -> ServerStatus -> IO ()
-deleteClientsBy cond ServerStatus{..} = atomically $ do
-  s <- readTVar serverClients
-  writeTVar serverClients $! HMap.filter (not . cond) s
+deleteClientsBy cond ServerStatus{..} = Conc.atomically $ do
+  s <- Conc.readTVar serverClients
+  Conc.writeTVar serverClients $! HMap.filter (not . cond) s
 
 deleteClientsBySocket :: Socket -> ServerStatus -> IO ()
 deleteClientsBySocket sock status =
   deleteClientsBy (\otps -> clientSock otps == sock) status
+
+-------------------------------------------------------------------------------
+-- Clients
 
 newtype ClientId = ClientId { unClientId :: UUID }
   deriving newtype (Show, Eq, Read, Hashable, NFData)
@@ -198,13 +218,19 @@ getClientIdFromASCIIBytes' bs =
 
 data ClientStatus =
   ClientStatus { clientSock    :: !Socket
-               , clientOptions :: Map HESP.Message HESP.Message
+               , clientOptions :: !(Map HESP.Message HESP.Message)
+               , consumeStream :: !(Conc.MVar (HashMap Topic (Serial Element)))
                }
 
 -- | Create client status from connection and handshake message
 -- sent through hesp.
-createClientStatus :: Socket -> Map HESP.Message HESP.Message -> ClientStatus
-createClientStatus = ClientStatus
+newClientStatus :: Socket -> Map HESP.Message HESP.Message -> IO ClientStatus
+newClientStatus sock opts = do
+  svar <- Conc.newMVar HMap.empty
+  return ClientStatus { clientSock    = sock
+                      , clientOptions = opts
+                      , consumeStream = svar
+                      }
 
 clientSocket :: ClientStatus -> Socket
 clientSocket = clientSock
@@ -221,6 +247,54 @@ extractClientPubMethod = extractClientIntOptions "pub-method"
 extractClientSubLevel :: ClientStatus -> Either ByteString Integer
 extractClientSubLevel = extractClientIntOptions "sub-level"
 
+insertConsumeStream :: Topic
+                    -> Serial Element
+                    -> ClientStatus
+                    -> IO ()
+insertConsumeStream topic s client =
+  Conc.modifyMVar_ (consumeStream client) $ \table ->
+    return $ HMap.insert topic s table
+
+tryInsertConsumeStream :: Topic
+                       -> Serial Element
+                       -> ClientStatus
+                       -> IO Bool
+tryInsertConsumeStream topic s client =
+  Conc.modifyMVar (consumeStream client) $ \table ->
+    if HMap.member topic table then return (table, False)
+                               else return (HMap.insert topic s table, True)
+
+deleteClientConsume :: Topic -> ClientStatus -> IO ()
+deleteClientConsume topic client =
+  Conc.modifyMVar_ (consumeStream client) $ \table ->
+    return $ HMap.delete topic table
+
+takeConsumeElements :: ClientStatus
+                    -> Topic
+                    -> Int
+                    -> IO (Maybe (Serial Element))
+takeConsumeElements client topic maxn =
+  Conc.modifyMVar (consumeStream client) $ \table -> do
+    let ms = HMap.lookup topic table
+    case ms of
+      Nothing -> return (table, Nothing)
+      Just es -> let (xs, ys) = S.splitAt maxn es
+                     !remain = HMap.adjust (const ys) topic table
+                  in return (remain, Just xs)
+
+withConsumeElements :: ClientStatus
+                    -> Topic
+                    -> Int
+                    -> (Maybe (Serial Element) -> IO ())
+                    -> IO ()
+withConsumeElements client topic maxn f =
+  Conc.modifyMVar_ (consumeStream client) $ \table -> do
+    let ms = HMap.lookup topic table
+    case ms of
+      Nothing -> f ms >> return table
+      Just es -> let (xs, ys) = S.splitAt maxn es
+                  in f (Just xs) >> return (HMap.adjust (const ys) topic table)
+
 -------------------------------------------------------------------------------
 -- Client requests
 
@@ -228,7 +302,8 @@ data RequestType
   = Handshake (Map HESP.Message HESP.Message)
   | SPut ClientId ByteString ByteString
   | SPuts ClientId ByteString (V.Vector ByteString)
-  | SGet ClientId ByteString (Maybe Word64) (Maybe Word64) Integer Integer
+  | SGet ClientId ByteString (Maybe Word64) (Maybe Word64) Integer
+  | SGetCtrl ClientId ByteString Integer
   deriving (Show, Eq)
 
 -------------------------------------------------------------------------------

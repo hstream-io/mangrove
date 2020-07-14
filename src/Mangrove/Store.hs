@@ -9,6 +9,8 @@ module Mangrove.Store
   , sput
   , sputs
   , sputsAtom
+
+  , readStreamEntry
   ) where
 
 import           Control.Exception      (Exception, SomeException, try)
@@ -19,18 +21,21 @@ import           Data.Either            (fromLeft, fromRight, isLeft)
 import           Data.Text              (pack)
 import           Data.Vector            (Vector)
 import qualified Data.Vector            as V
-import           Streamly               (Serial)
-import qualified Streamly.Prelude       as S
 
 import qualified Log.Store.Base         as LogStore
+import           Mangrove.Streaming     (Serial)
+import qualified Mangrove.Streaming     as S
+import           Mangrove.Types         (Element)
 import           Mangrove.Utils         (bs2str)
 
 -------------------------------------------------------------------------------
 
+-- TODO: remove me
 data SgetChunks = SgetStep [Element]
                 | SgetDone
                 | SgetFail SomeException
 
+-- TODO: remove me
 -- | Get a "snapshot" of elements.
 sget :: forall m . MonadIO m
      => LogStore.Context          -- ^ db context
@@ -44,7 +49,7 @@ sget :: forall m . MonadIO m
 sget db topic start end n offset process = stream >>= go
   where
     stream :: m (Serial Element)
-    stream = liftIO $ S.drop offset <$> readEntry db topic start end
+    stream = liftIO $ S.drop offset <$> readStreamEntry db topic start end
     go :: Serial Element -> m ()
     go s = do
       e_trunks <- liftIO $ try . S.toList $ S.take n s
@@ -118,15 +123,13 @@ sputsAtom db topic payloads = do
 -------------------------------------------------------------------------------
 -- Log-store
 
-type Element = (LogStore.Entry, LogStore.EntryID)
-
-readEntry :: MonadIO m
-          => LogStore.Context
-          -> ByteString
-          -> Maybe LogStore.EntryID
-          -> Maybe LogStore.EntryID
-          -> m (Serial Element)
-readEntry db topic start end = runReaderT f db
+readStreamEntry :: MonadIO m
+                => LogStore.Context
+                -> ByteString
+                -> Maybe LogStore.EntryID
+                -> Maybe LogStore.EntryID
+                -> m (Serial Element)
+readStreamEntry db topic start end = runReaderT f db
   where
     f = LogStore.open (pack key) ropts >>= \hd -> LogStore.readEntries hd start end
     key = bs2str topic
@@ -140,7 +143,7 @@ readEntries :: LogStore.Context
             -> Maybe LogStore.EntryID
             -> Maybe LogStore.EntryID
             -> IO [Element]
-readEntries db topic start end = S.toList =<< readEntry db topic start end
+readEntries db topic start end = S.toList =<< readStreamEntry db topic start end
 
 appendEntry :: MonadIO m
             => LogStore.Context

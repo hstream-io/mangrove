@@ -11,6 +11,7 @@ import           Control.Exception        (SomeException)
 import           Control.Monad.Reader     (ask, liftIO)
 import           Data.ByteString          (ByteString)
 import qualified Data.ByteString.Char8    as BSC
+import qualified Data.ByteString.Lazy     as LBS
 import qualified Data.Text                as Text
 import           Data.Text.Encoding       (decodeUtf8)
 import           Data.Vector              (Vector)
@@ -19,9 +20,10 @@ import           Data.Word                (Word64)
 import           Network.Socket           (Socket)
 import           Text.Read                (readMaybe)
 
-import           Log.Store.Base
+import           Log.Store.Base           (Context, EntryID)
 import qualified Mangrove.Server.Response as I
 import qualified Mangrove.Store           as Store
+import qualified Mangrove.Streaming       as S
 import           Mangrove.Types           (App, Env (..), RequestType (..))
 import qualified Mangrove.Types           as T
 import           Mangrove.Utils           ((.|.))
@@ -54,16 +56,18 @@ parseRequest :: HESP.Message
 parseRequest msg = do
   (n, paras) <- HESP.commandParser msg
   case n of
-    "hi"   -> parseHandshake paras
-    "sput" -> parseSPuts paras <> parseSPut paras
-    "sget" -> parseSGet paras
-    _      -> Left $ "Unrecognized request " <> n <> "."
+    "hi"    -> parseHandshake paras
+    "sput"  -> parseSPuts paras <> parseSPut paras
+    "sget"  -> parseSGet paras
+    "sgetc" -> parseSGetCtrl paras
+    _       -> Left $ "Unrecognized request " <> n <> "."
 
 processRequest :: Socket -> Context -> RequestType -> App (Maybe ())
 processRequest sock ctx rt = processHandshake sock ctx rt
                          .|. processSPut      sock ctx rt
                          .|. processSPuts     sock ctx rt
                          .|. processSGet      sock ctx rt
+                         .|. processSGetCtrl  sock rt
 
 -------------------------------------------------------------------------------
 -- Parse client requests
@@ -99,9 +103,16 @@ parseSGet paras = do
   sid    <- validateInt                 "Start ID"           sids
   eids   <- HESP.extractBulkStringParam "End ID"             paras 3
   eid    <- validateInt                 "End ID"             eids
-  maxn   <- HESP.extractIntegerParam    "Max message number" paras 4
-  offset <- HESP.extractIntegerParam    "Offset"             paras 5
-  return $ SGet cid topic sid eid maxn offset
+  offset <- HESP.extractIntegerParam    "Offset"             paras 4
+  return $ SGet cid topic sid eid offset
+
+parseSGetCtrl :: Vector HESP.Message -> Either ByteString RequestType
+parseSGetCtrl paras = do
+  cidStr <- HESP.extractBulkStringParam "Client ID"          paras 0
+  cid    <- T.getClientIdFromASCIIBytes' cidStr
+  topic  <- HESP.extractBulkStringParam "Topic"              paras 1
+  maxn   <- HESP.extractIntegerParam    "Max message number" paras 2
+  return $ SGetCtrl cid topic maxn
 
 -------------------------------------------------------------------------------
 -- Process client requests
@@ -110,7 +121,7 @@ processHandshake :: Socket -> Context -> RequestType -> App (Maybe ())
 processHandshake sock _ (Handshake opt) = do
   Env{..} <- ask
   cid <- liftIO T.newClientId
-  let client = T.createClientStatus sock opt
+  client <- liftIO $ T.newClientStatus sock opt
   liftIO $ T.insertClient cid client serverStatus
   Colog.logInfo $ "Created client: " <> T.packClientId cid
   let resp = I.mkHandshakeRespSucc cid
@@ -122,16 +133,16 @@ processHandshake _ _ _ = return Nothing
 processSPut :: Socket -> Context -> RequestType -> App (Maybe ())
 processSPut sock ctx (SPut cid topic payload) =
   let payloads = V.singleton payload
-   in processPub sock ctx "sput" cid topic payloads >> (return $ Just ())
+   in pub sock ctx "sput" cid topic payloads >> (return $ Just ())
 processSPut _ _ _ = return Nothing
 
 processSPuts :: Socket -> Context -> RequestType -> App (Maybe ())
 processSPuts sock ctx (SPuts cid topic payloads) =
-  processPub sock ctx "sput" cid topic payloads >> (return $ Just ())
+  pub sock ctx "sput" cid topic payloads >> (return $ Just ())
 processSPuts _ _ _ = return Nothing
 
 processSGet :: Socket -> Context -> RequestType -> App (Maybe ())
-processSGet sock ctx (SGet cid topic sid eid maxn offset) = do
+processSGet sock ctx (SGet cid topic sid eid offset) = do
   Env{serverStatus = serverStatus} <- ask
   m_client <- liftIO $ T.getClient cid serverStatus
   case m_client of
@@ -142,33 +153,78 @@ processSGet sock ctx (SGet cid topic sid eid maxn offset) = do
     Just client -> do
       Colog.logDebug $ "Reading " <> decodeUtf8 topic <> " ..."
       let clientSock = T.clientSocket client
-      -- NOTE: maxn and offset must not exceed maxBound::Int
-      Store.sget ctx topic sid eid (fromInteger maxn) (fromInteger offset) $
-        \case
-          Store.SgetStep xs -> do
-            let resps = map (I.mkSGetRespSucc cid topic) xs
-            Colog.logDebug $ "SGET sending OK: " <> decodeUtf8 topic
-            HESP.sendMsgs clientSock resps
-          Store.SgetDone    -> do
-            let resp = I.mkSGetRespDone cid topic
-            Colog.logDebug $ "SGET sending DONE: " <> decodeUtf8 topic
-            HESP.sendMsg clientSock resp
-          Store.SgetFail e  -> do
-            Colog.logException (e :: SomeException)
-            let resp = I.mkSGetRespFail cid topic
-            Colog.logDebug $ "SGET sending ERR: " <> decodeUtf8 topic
-            HESP.sendMsg clientSock resp
+      -- NOTE: offset must not exceed maxBound::Int
+      presget clientSock ctx "sget" cid topic sid eid (fromInteger offset)
   return $ Just ()
 processSGet _ _ _ = return Nothing
 
-processPub :: Socket
-           -> Context
-           -> ByteString
-           -> T.ClientId
-           -> ByteString
-           -> Vector ByteString
-           -> App ()
-processPub sock ctx lcmd cid topic payloads = do
+processSGetCtrl :: Socket -> RequestType -> App (Maybe ())
+processSGetCtrl sock (SGetCtrl cid topic maxn) =
+  sgetctrl sock "sgetc" cid topic (fromInteger maxn) >> return (Just ())
+processSGetCtrl _ _ = return Nothing
+
+-------------------------------------------------------------------------------
+
+presget :: Socket
+        -> Context
+        -> ByteString
+        -> T.ClientId
+        -> ByteString
+        -> Maybe EntryID
+        -> Maybe EntryID
+        -> Int
+        -> App ()
+presget sock ctx lcmd cid topic sid eid offset = do
+  Env{serverStatus = serverStatus} <- ask
+  m_client <- liftIO $ T.getClient cid serverStatus
+  case m_client of
+    Nothing -> do
+      let errmsg = "ClientID " <> T.packClientIdBS cid <> " not found."
+      Colog.logWarning $ decodeUtf8 errmsg
+      HESP.sendMsg sock $ I.mkGeneralPushError lcmd errmsg
+    Just client -> do
+      s <- S.drop offset <$> Store.readStreamEntry ctx topic sid eid
+      is_succ <- liftIO $ T.tryInsertConsumeStream topic s client
+      let resp = case is_succ of
+                   False -> I.mkCmdPushError cid lcmd topic "already existed"
+                   True  -> I.mkCmdPush cid lcmd topic "OK"
+      HESP.sendMsg sock resp
+
+sgetctrl :: Socket -> ByteString -> T.ClientId -> ByteString -> Int -> App ()
+sgetctrl sock lcmd cid topic maxn = do
+  Env{serverStatus = serverStatus} <- ask
+  m_client <- liftIO $ T.getClient cid serverStatus
+  case m_client of
+    Nothing -> do
+      let errmsg = "ClientID " <> T.packClientIdBS cid <> " not found."
+      Colog.logError $ decodeUtf8 errmsg
+      HESP.sendMsg sock $ I.mkGeneralPushError lcmd errmsg
+    Just client -> do
+      mes <- liftIO $ T.takeConsumeElements client topic maxn
+      case mes of
+        Nothing -> do
+          let errmsg = "elements not found"
+          HESP.sendMsg sock $ I.mkCmdPushError cid lcmd topic errmsg
+        Just es -> do
+          let enc = HESP.serialize . I.mkElementResp cid lcmd topic
+          -- FIXME: If SomeException happens, the client socket will be closed
+          -- immediately. There is no error message send to clien.
+          rbs <- liftIO $ S.encodeFromChunksIO enc es
+          if LBS.null rbs
+             then do liftIO $ T.deleteClientConsume topic client
+                     HESP.sendMsg sock $ I.mkCmdPush cid lcmd topic "END"
+             -- TODO: sub-level
+             else do HESP.sendLazy sock rbs
+                     HESP.sendMsg sock $ I.mkCmdPush cid lcmd topic "DONE"
+
+pub :: Socket
+    -> Context
+    -> ByteString
+    -> T.ClientId
+    -> ByteString
+    -> Vector ByteString
+    -> App ()
+pub sock ctx lcmd cid topic payloads = do
   Env{serverStatus = serverStatus} <- ask
   m_client <- liftIO $ T.getClient cid serverStatus
   case m_client of

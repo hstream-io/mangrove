@@ -116,6 +116,7 @@ sput sock SputOptions{..} = do
       case level of
         0 -> return ()
         1 -> do _ <- HESP.recvMsgs sock 1024
+                -- TODO: assert result is OK
                 return ()
         _ -> error "Invalid pubLevel."
     payload = BS.replicate numOfBytes (fromIntegral $ ord 'x')

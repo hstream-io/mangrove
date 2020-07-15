@@ -178,7 +178,7 @@ processClose sock ctx (Close cid) = do
   Colog.logInfo $ "Deleted client: " <> T.packClientId cid
   liftIO $ close sock
   return $ Just ()
-processClose _ _ = return Nothing
+processClose _ _ _ = return Nothing
 
 -------------------------------------------------------------------------------
 

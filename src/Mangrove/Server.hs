@@ -97,14 +97,14 @@ parseSPuts paras = do
 
 parseSGet :: Vector HESP.Message -> Either ByteString RequestType
 parseSGet paras = do
-  cidStr <- HESP.extractBulkStringParam "Client ID"          paras 0
+  cidStr <- HESP.extractBulkStringParam "Client ID" paras 0
   cid    <- T.getClientIdFromASCIIBytes' cidStr
-  topic  <- HESP.extractBulkStringParam "Topic"              paras 1
-  sids   <- HESP.extractBulkStringParam "Start ID"           paras 2
-  sid    <- validateInt                 "Start ID"           sids
-  eids   <- HESP.extractBulkStringParam "End ID"             paras 3
-  eid    <- validateInt                 "End ID"             eids
-  offset <- HESP.extractIntegerParam    "Offset"             paras 4
+  topic  <- HESP.extractBulkStringParam "Topic"     paras 1
+  sids   <- HESP.extractBulkStringParam "Start ID"  paras 2
+  sid    <- validateInt                 "Start ID"  sids
+  eids   <- HESP.extractBulkStringParam "End ID"    paras 3
+  eid    <- validateInt                 "End ID"    eids
+  offset <- HESP.extractIntegerParam    "Offset"    paras 4
   return $ SGet cid topic sid eid offset
 
 parseSGetCtrl :: Vector HESP.Message -> Either ByteString RequestType
@@ -216,7 +216,7 @@ sgetctrl sock lcmd cid topic maxn = do
         Just es -> do
           let enc = HESP.serialize . I.mkElementResp cid lcmd topic
           -- FIXME: If SomeException happens, the client socket will be closed
-          -- immediately. There is no error message send to clien.
+          -- immediately. There is no error message send to client.
           rbs <- liftIO $ S.encodeFromChunksIO enc es
           if LBS.null rbs
              then do liftIO $ T.deleteClientConsume topic client

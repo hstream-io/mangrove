@@ -41,3 +41,5 @@ COPY --from=dependencies /root/.cabal /root/.cabal
 COPY . /src
 
 RUN cabal v2-install --flag benchmark-cli
+
+# vim: set ft=dockerfile:

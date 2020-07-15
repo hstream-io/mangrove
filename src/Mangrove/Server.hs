@@ -171,12 +171,12 @@ processSGetCtrl sock (SGetCtrl cid topic maxn) =
   sgetctrl sock "sgetc" cid topic (fromInteger maxn) >> return (Just ())
 processSGetCtrl _ _ = return Nothing
 
-processClose :: Socket -> RequestType -> App (Maybe ())
-processClose sock (Close cid) = do
+processClose :: Socket -> Context -> RequestType -> App (Maybe ())
+processClose sock ctx (Close cid) = do
   Env{serverStatus = serverStatus} <- ask
-  T.deleteClient cid serverStatus
+  liftIO $ T.deleteClient cid serverStatus
   Colog.logInfo $ "Deleted client: " <> T.packClientId cid
-  close sock
+  liftIO $ close sock
   return $ Just ()
 processClose _ _ = return Nothing
 

@@ -118,9 +118,9 @@ parseSGetCtrl paras = do
 
 parseClose :: Vector HESP.Message -> Either ByteString RequestType
 parseClose paras = do
-  cidStr <- HESP.extractBulkStringParam "Client ID"          parse 0
+  cidStr <- HESP.extractBulkStringParam "Client ID"          paras 0
   cid    <- T.getClientIdFromASCIIBytes' cidStr
-  return $ Cose cid
+  return $ Close cid
 
 -------------------------------------------------------------------------------
 -- Process client requests

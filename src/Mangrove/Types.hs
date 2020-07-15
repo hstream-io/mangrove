@@ -304,6 +304,7 @@ data RequestType
   | SPuts ClientId ByteString (V.Vector ByteString)
   | SGet ClientId ByteString (Maybe Word64) (Maybe Word64) Integer
   | SGetCtrl ClientId ByteString Integer
+  | Close ClientId
   deriving (Show, Eq)
 
 -------------------------------------------------------------------------------

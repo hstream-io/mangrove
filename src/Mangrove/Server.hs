@@ -17,7 +17,7 @@ import           Data.Text.Encoding       (decodeUtf8)
 import           Data.Vector              (Vector)
 import qualified Data.Vector              as V
 import           Data.Word                (Word64)
-import           Network.Socket           (Socket)
+import           Network.Socket           (Socket, close)
 import           Text.Read                (readMaybe)
 
 import           Log.Store.Base           (Context, EntryID)
@@ -60,6 +60,7 @@ parseRequest msg = do
     "sput"  -> parseSPuts paras <> parseSPut paras
     "sget"  -> parseSGet paras
     "sgetc" -> parseSGetCtrl paras
+    "bye"   -> parseClose paras
     _       -> Left $ "Unrecognized request " <> n <> "."
 
 processRequest :: Socket -> Context -> RequestType -> App (Maybe ())
@@ -68,6 +69,7 @@ processRequest sock ctx rt = processHandshake sock ctx rt
                          .|. processSPuts     sock ctx rt
                          .|. processSGet      sock ctx rt
                          .|. processSGetCtrl  sock rt
+                         .|. processClose     sock ctx rt
 
 -------------------------------------------------------------------------------
 -- Parse client requests
@@ -113,6 +115,12 @@ parseSGetCtrl paras = do
   topic  <- HESP.extractBulkStringParam "Topic"              paras 1
   maxn   <- HESP.extractIntegerParam    "Max message number" paras 2
   return $ SGetCtrl cid topic maxn
+
+parseClose :: Vector HESP.Message -> Either ByteString RequestType
+parseClose paras = do
+  cidStr <- HESP.extractBulkStringParam "Client ID"          parse 0
+  cid    <- T.getClientIdFromASCIIBytes' cidStr
+  return $ Cose cid
 
 -------------------------------------------------------------------------------
 -- Process client requests
@@ -162,6 +170,15 @@ processSGetCtrl :: Socket -> RequestType -> App (Maybe ())
 processSGetCtrl sock (SGetCtrl cid topic maxn) =
   sgetctrl sock "sgetc" cid topic (fromInteger maxn) >> return (Just ())
 processSGetCtrl _ _ = return Nothing
+
+processClose :: Socket -> RequestType -> App (Maybe ())
+processClose sock (Close cid) = do
+  Env{serverStatus = serverStatus} <- ask
+  T.deleteClient cid serverStatus
+  Colog.logInfo $ "Deleted client: " <> T.packClientId cid
+  close sock
+  return $ Just ()
+processClose _ _ = return Nothing
 
 -------------------------------------------------------------------------------
 

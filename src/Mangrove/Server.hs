@@ -176,7 +176,7 @@ processClose sock ctx (Close cid) = do
   Env{serverStatus = serverStatus} <- ask
   liftIO $ T.deleteClient cid serverStatus
   Colog.logInfo $ "Deleted client: " <> T.packClientId cid
-  liftIO $ close sock
+  liftIO $ close sock 
   return $ Just ()
 processClose _ _ _ = return Nothing
 

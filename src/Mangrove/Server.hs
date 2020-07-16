@@ -1,13 +1,14 @@
-{-# LANGUAGE LambdaCase        #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Mangrove.Server
   ( onRecvMsg
   ) where
 
 import qualified Colog
-import           Control.Exception        (SomeException)
+import           Control.Exception        (SomeException, try, throw)
 import           Control.Monad.Reader     (ask, liftIO)
 import           Data.ByteString          (ByteString)
 import qualified Data.ByteString.Char8    as BSC
@@ -20,7 +21,7 @@ import           Data.Word                (Word64)
 import           Network.Socket           (Socket)
 import           Text.Read                (readMaybe)
 
-import           Log.Store.Base           (Context, EntryID)
+import           Log.Store.Base           (Context, EntryID, LogStoreException (..))
 import qualified Mangrove.Server.Response as I
 import qualified Mangrove.Store           as Store
 import qualified Mangrove.Streaming       as S
@@ -183,12 +184,19 @@ presget sock ctx lcmd cid topic sid eid offset = do
       Colog.logWarning $ decodeUtf8 errmsg
       HESP.sendMsg sock $ I.mkGeneralPushError lcmd errmsg
     Just client -> do
-      s <- S.drop offset <$> Store.readStreamEntry ctx topic sid eid
-      is_succ <- liftIO $ T.tryInsertConsumeStream topic s client
-      let resp = case is_succ of
-                   False -> I.mkCmdPushError cid lcmd topic "already existed"
-                   True  -> I.mkCmdPush cid lcmd topic "OK"
-      HESP.sendMsg sock resp
+      e_s <- liftIO . try $ S.drop offset <$> Store.readStreamEntry ctx topic sid eid
+      case e_s of
+        Left e@(LogStoreLogNotFoundException _) -> do
+          let errmsg = "Topic " <> topic <> " not found."
+          Colog.logError . Text.pack . show $ e
+          HESP.sendMsg sock $ I.mkGeneralPushError lcmd errmsg
+        Left e -> throw e
+        Right s -> do
+          is_succ <- liftIO $ T.tryInsertConsumeStream topic s client
+          let resp = case is_succ of
+                       False -> I.mkCmdPushError cid lcmd topic "already existed"
+                       True  -> I.mkCmdPush cid lcmd topic "OK"
+          HESP.sendMsg sock resp
 
 sgetctrl :: Socket -> ByteString -> T.ClientId -> ByteString -> Int -> App ()
 sgetctrl sock lcmd cid topic maxn = do

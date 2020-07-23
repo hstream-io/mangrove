@@ -12,7 +12,7 @@ RUN apt-get clean autoclean && \
     rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /root/.cabal/bin/mangrove /usr/local/bin/mangrove
-RUN mkdir -p /etc/mangrove/ 
+RUN mkdir -p /etc/mangrove/
 COPY app/config.example.yaml /etc/mangrove/config.example.yaml
 
 EXPOSE 6560

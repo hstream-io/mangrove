@@ -79,7 +79,7 @@ import           Data.UUID                   (UUID)
 import qualified Data.UUID                   as UUID
 import qualified Data.UUID.V4                as UUID
 import qualified Data.Vector                 as V
-import           Data.Word                   (Word64)
+import           Data.Word                   (Word64, Word32)
 import qualified GHC.Conc                    as Conc
 import           GHC.Generics                (Generic)
 import           Network.Socket              (Socket)
@@ -118,10 +118,14 @@ runApp env app = runReaderT (unApp app) env
 -- Server settings
 
 data ServerSettings m =
-  ServerSettings { serverHost    :: !NS.HostName
-                 , serverPort    :: !Int
-                 , dbPath        :: !String
-                 , loggerSetting :: !(LoggerSetting m)
+  ServerSettings { serverHost        :: !NS.HostName
+                 , serverPort        :: !Int
+                 , dbPath            :: !String
+                 , cfWriteBufferSize :: !Word64
+                 , dbWriteBufferSize :: !Word64
+                 , enableDBStats     :: !Bool
+                 , dbStatsPeriodSec  :: !Word32
+                 , loggerSetting     :: !(LoggerSetting m)
                  }
   deriving (Generic)
 

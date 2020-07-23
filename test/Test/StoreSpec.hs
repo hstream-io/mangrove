@@ -7,6 +7,7 @@ import           Control.Exception    (SomeException)
 import           Control.Monad.Reader (runReaderT)
 import           Data.ByteString      (ByteString)
 import qualified Data.ByteString      as BS
+import           Data.Word            (Word64, Word32)
 import           System.IO.Temp       (withSystemTempDirectory)
 import           Test.Hspec
 
@@ -17,12 +18,26 @@ spec :: Spec
 spec = do
   streamPutGet
 
+defaultCfWriteBufferSize :: Word64
+defaultCfWriteBufferSize = 64 * 1024 * 1024
+
+defaultDbWriteBufferSize :: Word64
+defaultDbWriteBufferSize = 0
+
+defaultEnableDBStats :: Bool
+defaultEnableDBStats = True
+
+defaultDBStatsPeriodSec :: Word32
+defaultDBStatsPeriodSec = 10
+
 streamPutGet :: Spec
 streamPutGet = describe "Stream Put Get operations" $ do
   it "put one element to db and then get it out" $ do
     withSystemTempDirectory "rocksdb-test" $ \dbdir -> do
       bracket
-        (Store.initialize $ Store.Config dbdir)
+        (Store.initialize $
+          Store.Config dbdir defaultCfWriteBufferSize defaultDbWriteBufferSize
+            defaultEnableDBStats defaultDBStatsPeriodSec)
         (runReaderT Store.shutDown)
         putget `shouldReturn` True
 

@@ -11,6 +11,8 @@ import           Data.Maybe            (fromJust)
 import qualified Data.Text             as Text
 import qualified Data.Text.Encoding    as Text
 import           Data.Time.Clock.POSIX (getPOSIXTime)
+import qualified Data.UUID             as UUID
+import qualified Data.UUID.V4          as UUID
 import qualified Data.Vector           as V
 import qualified Network.HESP          as HESP
 import qualified Network.HESP.Commands as HESP
@@ -173,9 +175,7 @@ showSpeed label numBytes action = go 0 0.0
          else go flow' time'
 
 genTopic :: IO ByteString
-genTopic = do
-  x <- floor <$> getPOSIXTime :: IO Int
-  return $ "topic-" <> (encodeUtf8 . show) x
+genTopic = UUID.toASCIIBytes <$> UUID.nextRandom
 
 encodeUtf8 :: String -> ByteString
 encodeUtf8 = Text.encodeUtf8 . Text.pack

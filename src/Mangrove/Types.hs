@@ -1,5 +1,4 @@
 {-# LANGUAGE BangPatterns               #-}
-{-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleInstances          #-}
@@ -178,14 +177,14 @@ getClient cid ServerStatus{..} = do
 insertClient :: ClientId -> ClientStatus -> ServerStatus -> IO ()
 insertClient cid options ServerStatus{..} = Conc.atomically $ do
   s <- Conc.readTVar serverClients
-  Conc.writeTVar serverClients $! (HMap.insert cid options s)
+  Conc.writeTVar serverClients $! HMap.insert cid options s
 
 -- | Remove the client for the specified 'ClientId' from
 -- 'ServerStatus' if present.
 deleteClient :: ClientId -> ServerStatus -> IO ()
 deleteClient cid ServerStatus{..} = Conc.atomically $ do
   s <- Conc.readTVar serverClients
-  Conc.writeTVar serverClients $! (HMap.delete cid s)
+  Conc.writeTVar serverClients $! HMap.delete cid s
 
 deleteClientsBy :: (ClientStatus -> Bool) -> ServerStatus -> IO ()
 deleteClientsBy cond ServerStatus{..} = Conc.atomically $ do
@@ -193,8 +192,7 @@ deleteClientsBy cond ServerStatus{..} = Conc.atomically $ do
   Conc.writeTVar serverClients $! HMap.filter (not . cond) s
 
 deleteClientsBySocket :: Socket -> ServerStatus -> IO ()
-deleteClientsBySocket sock status =
-  deleteClientsBy (\otps -> clientSock otps == sock) status
+deleteClientsBySocket sock = deleteClientsBy (\otps -> clientSock otps == sock)
 
 -------------------------------------------------------------------------------
 -- Clients
@@ -212,7 +210,7 @@ packClientIdBS :: ClientId -> ByteString
 packClientIdBS = UUID.toASCIIBytes . unClientId
 
 getClientIdFromASCIIBytes :: ByteString -> Maybe ClientId
-getClientIdFromASCIIBytes = (fmap ClientId) . UUID.fromASCIIBytes
+getClientIdFromASCIIBytes = fmap ClientId . UUID.fromASCIIBytes
 
 getClientIdFromASCIIBytes' :: ByteString -> Either ByteString ClientId
 getClientIdFromASCIIBytes' bs =

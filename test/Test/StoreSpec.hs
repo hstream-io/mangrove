@@ -2,8 +2,7 @@
 
 module Test.StoreSpec (spec) where
 
-import           Control.Exception    (bracket)
-import           Control.Exception    (SomeException)
+import           Control.Exception    (bracket, SomeException)
 import           Control.Monad.Reader (runReaderT)
 import           Data.ByteString      (ByteString)
 import qualified Data.ByteString      as BS
@@ -43,11 +42,11 @@ streamPutGet = describe "Stream Put Get operations" $ do
 
 putget :: Store.Context -> IO Bool
 putget ctx = do
-  r <- (sput ctx topic payload) :: IO (Either SomeException Store.EntryID)
+  r <- sput ctx topic payload :: IO (Either SomeException Store.EntryID)
   case r of
     Left _        -> return False
     Right entryid -> do
-      r' <- (sgetAll ctx topic (Just entryid) Nothing 10 0) :: IO (Either SomeException [(Store.Entry, Store.EntryID)])
+      r' <- sgetAll ctx topic (Just entryid) Nothing 10 0 :: IO (Either SomeException [(Store.Entry, Store.EntryID)])
       case r' of
         Right [(entry, entryid')] ->
           return $ entryid' == entryid && entry == payload

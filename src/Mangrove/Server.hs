@@ -8,7 +8,7 @@ module Mangrove.Server
   ) where
 
 import qualified Colog
-import           Control.Exception        (SomeException, try, throw)
+import           Control.Exception        (SomeException, throw, try)
 import           Control.Monad.Reader     (ask, liftIO)
 import           Data.ByteString          (ByteString)
 import qualified Data.ByteString.Char8    as BSC
@@ -21,7 +21,8 @@ import           Data.Word                (Word64)
 import           Network.Socket           (Socket)
 import           Text.Read                (readMaybe)
 
-import           Log.Store.Base           (Context, EntryID, LogStoreException (..))
+import           Log.Store.Base           (Context, EntryID,
+                                           LogStoreException (..))
 import qualified Mangrove.Server.Response as I
 import qualified Mangrove.Store           as Store
 import qualified Mangrove.Streaming       as S
@@ -57,11 +58,12 @@ parseRequest :: HESP.Message
 parseRequest msg = do
   (n, paras) <- HESP.commandParser msg
   case n of
-    "hi"    -> parseHandshake paras
-    "sput"  -> parseSPuts paras <> parseSPut paras
-    "sget"  -> parseSGet paras
-    "sgetc" -> parseSGetCtrl paras
-    _       -> Left $ "Unrecognized request " <> n <> "."
+    "hi"     -> parseHandshake paras
+    "sput"   -> parseSPuts paras <> parseSPut paras
+    "sget"   -> parseSGet paras
+    "sgetc"  -> parseSGetCtrl paras
+    "srange" -> parseSRange paras
+    _        -> Left $ "Unrecognized request " <> n <> "."
 
 processRequest :: Socket -> Context -> RequestType -> App (Maybe ())
 processRequest sock ctx rt = processHandshake sock ctx rt
@@ -69,6 +71,7 @@ processRequest sock ctx rt = processHandshake sock ctx rt
                          .|. processSPuts     sock ctx rt
                          .|. processSGet      sock ctx rt
                          .|. processSGetCtrl  sock rt
+                         .|. processSRange    sock ctx rt
 
 -------------------------------------------------------------------------------
 -- Parse client requests
@@ -114,6 +117,19 @@ parseSGetCtrl paras = do
   topic  <- HESP.extractBulkStringParam "Topic"              paras 1
   maxn   <- HESP.extractIntegerParam    "Max message number" paras 2
   return $ SGetCtrl cid topic maxn
+
+parseSRange :: Vector HESP.Message -> Either ByteString RequestType
+parseSRange paras = do
+  cidStr <- HESP.extractBulkStringParam "Client ID" paras 0
+  cid    <- T.getClientIdFromASCIIBytes' cidStr
+  topic  <- HESP.extractBulkStringParam "Topic"     paras 1
+  sids   <- HESP.extractBulkStringParam "Start ID"  paras 2
+  sid    <- validateInt                 "Start ID"  sids
+  eids   <- HESP.extractBulkStringParam "End ID"    paras 3
+  eid    <- validateInt                 "End ID"    eids
+  offset <- HESP.extractIntegerParam    "Offset"    paras 4
+  maxn <- HESP.extractIntegerParam      "Maxn"      paras 5
+  return $ SRange cid topic sid eid offset maxn
 
 -------------------------------------------------------------------------------
 -- Process client requests
@@ -163,6 +179,33 @@ processSGetCtrl :: Socket -> RequestType -> App (Maybe ())
 processSGetCtrl sock (SGetCtrl cid topic maxn) =
   sgetctrl sock "sgetc" cid topic (fromInteger maxn) >> return (Just ())
 processSGetCtrl _ _ = return Nothing
+
+processSRange :: Socket -> Context -> RequestType -> App (Maybe ())
+processSRange sock ctx (SRange cid topic sid eid offset maxn) = do
+  let lcmd = "srange"
+  Env{serverStatus = serverStatus} <- ask
+  m_client <- liftIO $ T.getClient cid serverStatus
+  case m_client of
+    Nothing -> do
+      let errmsg = "ClientID " <> T.packClientIdBS cid <> " not found."
+      Colog.logWarning $ decodeUtf8 errmsg
+      HESP.sendMsg sock $ I.mkGeneralPushError lcmd errmsg
+    Just client -> do
+      let cut = S.take (fromInteger maxn) . S.drop (fromInteger offset)
+      e_s <- liftIO . try $ cut <$> Store.readStreamEntry ctx topic sid eid
+      let clientSock = T.clientSocket client
+      case e_s of
+        Left e@(LogStoreLogNotFoundException _) -> do
+          let errmsg = "Topic " <> topic <> " not found."
+          Colog.logError . Text.pack . show $ e
+          HESP.sendMsg clientSock $ I.mkGeneralPushError lcmd errmsg
+        Left e -> throw e
+        Right s -> do
+          let enc = HESP.serialize . I.mkElementResp cid lcmd topic
+          resp <- liftIO $ S.encodeFromChunksIO enc s
+          HESP.sendLazy clientSock resp
+  return $ Just ()
+processSRange _ _ _ = return Nothing
 
 -------------------------------------------------------------------------------
 

@@ -22,6 +22,7 @@ import           Options.Applicative   (Parser)
 import qualified Options.Applicative   as O
 import           System.IO             (hPutStr, hSetBuffering)
 import qualified System.IO             as SIO
+import           System.Random         (randomRIO)
 
 -------------------------------------------------------------------------------
 
@@ -31,7 +32,7 @@ data App =
       }
 
 appOpts :: Parser App
-appOpts = App <$> connectionOtpion <*> commandOtpion
+appOpts = App <$> connectionOption <*> commandOption
 
 main :: IO ()
 main = do
@@ -51,8 +52,8 @@ data ConnectionSetting =
                     , serverPort :: Int
                     }
 
-connectionOtpion :: Parser ConnectionSetting
-connectionOtpion =
+connectionOption :: Parser ConnectionSetting
+connectionOption =
   ConnectionSetting
     <$> O.strOption (O.long "host"
                   <> O.short 'h'
@@ -69,8 +70,8 @@ connectionOtpion =
 
 data Command = SputCommand SputOptions
 
-commandOtpion :: Parser Command
-commandOtpion = SputCommand <$> O.hsubparser sputCommand
+commandOption :: Parser Command
+commandOption = SputCommand <$> O.hsubparser sputCommand
   where
     sputCommand = O.command "sput" (O.info sputOptions (O.progDesc "SPUT -- publish messages to stream"))
 
@@ -81,7 +82,7 @@ data SputOptions =
               , pubMethod  :: Int
               }
 
-data TopicName = TopicName String | RandomTopicName
+data TopicName = TopicName String | RandomTopicName Int
 
 sputOptions :: Parser SputOptions
 sputOptions =
@@ -101,7 +102,7 @@ topicOption :: Parser TopicName
 topicOption = a_topic <|> b_topic
   where
     a_topic = TopicName <$> O.strOption (O.long "topic" <> O.help "Topic Name")
-    b_topic = O.flag' RandomTopicName (O.long "random-topic" <> O.help "Generate random topic name")
+    b_topic = RandomTopicName <$> O.option O.auto (O.long "random-topic" <> O.help "Generate random topic name")
 
 -------------------------------------------------------------------------------
 
@@ -113,7 +114,7 @@ sput sock SputOptions{..} = do
     action clientid level = do
       topic <- case topicName of
                  TopicName name  -> return $ encodeUtf8 name
-                 RandomTopicName -> genTopic
+                 RandomTopicName n -> if n == -1 then genTopic else genTopicRange n
       HESP.sendMsg sock $ sputRequest clientid topic payload
       case level of
         0 -> return ()
@@ -176,6 +177,11 @@ showSpeed label numBytes action = go 0 0.0
 
 genTopic :: IO ByteString
 genTopic = UUID.toASCIIBytes <$> UUID.nextRandom
+
+genTopicRange :: Int -> IO ByteString
+genTopicRange n = do
+  i <- randomRIO (1,n)
+  return $ "topic-" <> (encodeUtf8 . show) i
 
 encodeUtf8 :: String -> ByteString
 encodeUtf8 = Text.encodeUtf8 . Text.pack

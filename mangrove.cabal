@@ -85,6 +85,7 @@ executable mangrove-benchmark-cli
                   , hesp
                   , network              >= 3.1.1
                   , optparse-applicative ^>= 0.15
+                  , random
                   , text
                   , time
                   , uuid

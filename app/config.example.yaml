@@ -7,8 +7,8 @@ port: 6560
 # Path to the database on the disk
 db-path: /tmp/db-test
 
-# Size of column family write buffer, in bytes
-cfWriteBufferSize: 1073741824 # 1G
+# Size of column family write buffer, in bytes, default is 300M
+cfWriteBufferSize: 314572800    # 300 * 1024 * 1024
 
 # Size of DB write buffer, in bytes
 dbWriteBufferSize: 0

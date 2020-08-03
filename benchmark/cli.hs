@@ -7,7 +7,7 @@ module Main (main) where
 import           Control.Applicative   ((<**>), (<|>))
 import           Control.Concurrent    (MVar, forkIO, modifyMVar_, newMVar,
                                         swapMVar, threadDelay)
-import           Control.Monad         (replicateM_, void)
+import           Control.Monad         (replicateM_)
 import           Data.ByteString       (ByteString)
 import qualified Data.ByteString       as BS
 import           Data.Char             (ord)
@@ -22,7 +22,6 @@ import qualified Data.Vector           as V
 import qualified Network.HESP          as HESP
 import qualified Network.HESP.Commands as HESP
 import           Network.Socket        (HostName, Socket)
-import           Numeric               (showFFloat)
 import           Options.Applicative   (Parser)
 import qualified Options.Applicative   as O
 import           Text.Printf           (printf)
@@ -42,7 +41,7 @@ main = do
   App{..} <- O.execParser $ O.info (appOpts <**> O.helper) O.fullDesc
   case command of
     SputCommand opts -> runSputCommand connection opts
-    SrangeCommand opts -> runTCPClient connection $ flip srange opts
+    SrangeCommand opts -> runSrangeCommand connection opts
 runSputCommand :: ConnectionSetting -> SputOptions -> IO ()
 runSputCommand conn opts = do
   clientLabel <- genRandomByteString
@@ -54,6 +53,18 @@ runSputCommand conn opts = do
   putStrLn $ printf "%-10s %-20s %-20s" ("Command" :: String) ("Speed (MiB/s)" :: String) ("AvgSpeed (MiB/s)" :: String)
   putStrLn $ replicate 48 '-'
   runPrintSpeed "sput" interval var
+
+runSrangeCommand :: ConnectionSetting -> SrangeOptions -> IO ()
+runSrangeCommand conn opts = do
+  clientLabel <- genRandomByteString
+  var <- newMVar 0
+  -- spawn clients
+  replicateM_ (rangeNClients opts) $ forkIO $ runTCPClient conn $ srange clientLabel opts var
+  -- print speed
+  let interval = floor $ (rangePrintInterval opts) * 1000000
+  putStrLn $ printf "%-10s %-20s %-20s" ("Command" :: String) ("Speed (MiB/s)" :: String) ("AvgSpeed (MiB/s)" :: String)
+  putStrLn $ replicate 48 '-'
+  runPrintSpeed "srange" interval var
 
 runTCPClient :: ConnectionSetting -> (Socket -> IO a) -> IO a
 runTCPClient ConnectionSetting{..} f =
@@ -108,9 +119,13 @@ data TopicName = TopicName String
                | ClientTopicName String
 
 data SrangeOptions =
-  SrangeOptions { rangeTopicName :: ByteString
-                , rangeStartFrom :: Integer
-                , rangeMaxn      :: Integer
+  SrangeOptions { rangeNClients         :: Int
+                , rangeTopicName        :: TopicName
+                , rangeStartFrom        :: Integer
+                , rangeMaxn             :: Integer
+                , rangePrintInterval    :: Double
+                , rangeSamplingInterval :: Double
+                , rangeMaxTime          :: Double
                 }
 
 sputOptions :: Parser SputOptions
@@ -156,22 +171,35 @@ topicOption = a_topic <|> b_topic <|> c_topic
 srangeOptions :: Parser SrangeOptions
 srangeOptions =
   SrangeOptions
-    <$> O.strOption (O.long "topic"
-                                 <> O.short 't'
-                                 <> O.help "Topic Name")
+    <$> O.option O.auto (O.long "clients"
+                      <> O.short 'n'
+                      <> O.help "Number of clients")
+    <*> topicOption
     <*> O.option O.auto (O.long "start"
                       <> O.short 's'
                       <> O.help "Message ID to start from")
     <*> O.option O.auto (O.long "maxn"
-                      <> O.short 'n'
+                      <> O.short 'm'
                       <> O.help "Number of messages to fetch each time")
+    <*> O.option O.auto (O.long "print-interval"
+                      <> O.short 'i'
+                      <> O.showDefault
+                      <> O.value 1
+                      <> O.help "Inteval of show speed to stdout, in seconds")
+    <*> O.option O.auto (O.long "sampling-interval"
+                      <> O.showDefault
+                      <> O.value 0.1
+                      <> O.help "Sampling interval, in seconds")
+    <*> O.option O.auto (O.long "max-time"
+                      <> O.short 'x'
+                      <> O.help "Max seconds of running benchmark")
 
 -------------------------------------------------------------------------------
 
-sput :: ByteString -> SputOptions -> MVar Int -> Socket ->  IO ()
+sput :: ByteString -> SputOptions -> MVar Int -> Socket -> IO ()
 sput clientLabel SputOptions{..} sendedBytes sock = do
   clientid <- preparePubRequest sock (fromIntegral pubLevel) (fromIntegral pubMethod)
-  speedSampling samplingInterval maxTime sendedBytes (action clientid pubLevel)
+  speedSampling samplingInterval maxTime sendedBytes () (\_ -> action clientid pubLevel)
   where
     action clientid level = do
       topic <- case topicName of
@@ -180,10 +208,10 @@ sput clientLabel SputOptions{..} sendedBytes sock = do
                  ClientTopicName name -> return $ clientLabel <> encodeUtf8 name
       HESP.sendMsg sock $ sputRequest clientid topic payload
       case level of
-        0 -> return numOfBytes
+        0 -> return ((), numOfBytes)
         1 -> do _ <- HESP.recvMsgs sock 1024
                 -- TODO: assert result is OK
-                return numOfBytes
+                return ((), numOfBytes)
         _ -> error "Invalid pubLevel."
     payload = BS.replicate numOfBytes (fromIntegral $ ord 'x')
 
@@ -212,16 +240,20 @@ preparePubRequest sock pubLevel pubMethod =
 
 -------------------------------------------------------------------------------
 
-srange :: Socket -> SrangeOptions -> IO ()
-srange sock SrangeOptions{..} = do
+srange :: ByteString -> SrangeOptions -> MVar Int -> Socket -> IO ()
+srange clientLabel SrangeOptions{..} sendedBytes sock = do
   clientid <- prepareSrangeRequest sock
-  void $ showSpeed "srange" rangeStartFrom (action clientid)
+  speedSampling rangeSamplingInterval rangeMaxTime sendedBytes rangeStartFrom (action clientid) >> pure ()
   where
     action :: ByteString
            -> Integer
            -> IO (Integer, Int) -- (sid', flow)
     action clientid sid = do
-      HESP.sendMsg sock $ srangeRequest clientid rangeTopicName
+      topic <- case rangeTopicName of
+        TopicName name -> return $ encodeUtf8 name
+        RandomTopicName -> error "srange does not support a single random topic."
+        ClientTopicName name -> return $ clientLabel <> encodeUtf8 name
+      HESP.sendMsg sock $ srangeRequest clientid topic
         (encodeUtf8 . show $ sid) "" 0 rangeMaxn
       datas <- HESP.recvMsgs sock 1024
       flows <- mapM processMsg datas
@@ -287,16 +319,16 @@ extractClientId (HESP.MatchArray vs) =
    in if t == "hi" && r == "OK" then i else error "clientid error"
 extractClientId x = error $ "Unexpected message: " <> show x
 
-speedSampling :: Double -> Double -> MVar Int -> IO Int -> IO ()
-speedSampling interval maxTime numBytes action = go 0 0.0 0.0
+speedSampling :: forall a . Double -> Double -> MVar Int -> a -> (a -> IO (a, Int)) -> IO a
+speedSampling interval maxTime numBytes start action = go 0 0.0 0.0 start
   where
-    go :: Int -> Double -> Double -> IO ()
-    go flow time totalTime = do
+    go :: Int -> Double -> Double -> a -> IO a
+    go flow time totalTime input = do
       if totalTime > maxTime
-         then swapMVar numBytes (-1) >> return ()
+         then swapMVar numBytes (-1) >> return input
          else do
            startTime <- getPOSIXTime
-           bytes <- action
+           (output, bytes) <- action input
            endTime <- getPOSIXTime
            let deltaT = realToFrac $ endTime - startTime
                flow'  = flow + bytes
@@ -304,8 +336,8 @@ speedSampling interval maxTime numBytes action = go 0 0.0 0.0
                total' = totalTime + deltaT
            if time' > interval
               then do modifyMVar_ numBytes $ \s -> return (s + flow')
-                      go 0 0.0 total'
-              else go flow' time' total'
+                      go 0 0.0 total' output
+              else go flow' time' total' output
 
 runPrintSpeed :: String -> Int -> MVar Int -> IO ()
 runPrintSpeed label microsec numBytes = go 0 0
@@ -327,24 +359,6 @@ runPrintSpeed label microsec numBytes = go 0 0
 
 genRandomByteString :: IO ByteString
 genRandomByteString = UUID.toASCIIBytes <$> UUID.nextRandom
-
-showSpeed :: forall a . String -> a -> (a -> IO (a, Int)) -> IO a
-showSpeed label start act = go 0 0.0 start
-  where
-    go :: Int -> Double -> a -> IO a
-    go flow time input = do
-      startTime <- getPOSIXTime
-      (output, numBytes) <- act input
-      endTime <- getPOSIXTime
-      let deltaT = realToFrac $ endTime - startTime
-      let flow' = flow + numBytes
-      let time' = time + deltaT
-      if time' > 1
-         then do let speed = (fromIntegral flow') / time' / 1024 / 1024
-                 putStrLn $ "\r=> " <> label <> " speed: "
-                                   <> showFFloat (Just 2) speed " MiB/s"
-                 go 0 0.0 output
-         else go flow' time' output
 
 encodeUtf8 :: String -> ByteString
 encodeUtf8 = Text.encodeUtf8 . Text.pack

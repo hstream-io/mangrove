@@ -203,7 +203,9 @@ processSRange sock ctx (SRange cid topic sid eid offset maxn) = do
         Right s -> do
           let enc = HESP.serialize . I.mkElementResp cid lcmd topic
           resp <- liftIO $ S.encodeFromChunksIO enc s
-          HESP.sendLazy clientSock resp
+          if LBS.null resp
+            then HESP.sendMsg clientSock $ I.mkCmdPush cid lcmd topic "DONE"
+            else HESP.sendLazy clientSock resp
   return $ Just ()
 processSRange _ _ _ = return Nothing
 

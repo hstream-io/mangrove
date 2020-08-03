@@ -1,15 +1,17 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Main (main) where
 
 import           Control.Applicative   ((<**>), (<|>))
 import           Control.Concurrent    (MVar, forkIO, modifyMVar_, newMVar,
                                         swapMVar, threadDelay)
-import           Control.Monad         (replicateM_)
+import           Control.Monad         (replicateM_, void)
 import           Data.ByteString       (ByteString)
 import qualified Data.ByteString       as BS
 import           Data.Char             (ord)
+import qualified Data.List             as L
 import           Data.Maybe            (fromJust)
 import qualified Data.Text             as Text
 import qualified Data.Text.Encoding    as Text
@@ -20,6 +22,7 @@ import qualified Data.Vector           as V
 import qualified Network.HESP          as HESP
 import qualified Network.HESP.Commands as HESP
 import           Network.Socket        (HostName, Socket)
+import           Numeric               (showFFloat)
 import           Options.Applicative   (Parser)
 import qualified Options.Applicative   as O
 import           Text.Printf           (printf)
@@ -32,14 +35,14 @@ data App =
       }
 
 appOpts :: Parser App
-appOpts = App <$> connectionOtpion <*> commandOtpion
+appOpts = App <$> connectionOption <*> commandOption
 
 main :: IO ()
 main = do
   App{..} <- O.execParser $ O.info (appOpts <**> O.helper) O.fullDesc
   case command of
     SputCommand opts -> runSputCommand connection opts
-
+    SrangeCommand opts -> runTCPClient connection $ flip srange opts
 runSputCommand :: ConnectionSetting -> SputOptions -> IO ()
 runSputCommand conn opts = do
   clientLabel <- genRandomByteString
@@ -63,8 +66,8 @@ data ConnectionSetting =
                     , serverPort :: Int
                     }
 
-connectionOtpion :: Parser ConnectionSetting
-connectionOtpion =
+connectionOption :: Parser ConnectionSetting
+connectionOption =
   ConnectionSetting
     <$> O.strOption (O.long "host"
                   <> O.short 'h'
@@ -80,11 +83,14 @@ connectionOtpion =
                       <> O.help "Server port")
 
 data Command = SputCommand SputOptions
+             | SrangeCommand SrangeOptions
 
-commandOtpion :: Parser Command
-commandOtpion = SputCommand <$> O.hsubparser sputCommand
+commandOption :: Parser Command
+commandOption = SputCommand <$> O.hsubparser sputCommand
+            <|> SrangeCommand <$> O.hsubparser srangeCommand
   where
     sputCommand = O.command "sput" (O.info sputOptions (O.progDesc "SPUT -- publish messages to stream"))
+    srangeCommand = O.command "srange" (O.info srangeOptions (O.progDesc "SRANGE -- get messages from stream"))
 
 data SputOptions =
   SputOptions { nClients         :: Int
@@ -100,6 +106,12 @@ data SputOptions =
 data TopicName = TopicName String
                | RandomTopicName
                | ClientTopicName String
+
+data SrangeOptions =
+  SrangeOptions { rangeTopicName :: ByteString
+                , rangeStartFrom :: Integer
+                , rangeMaxn      :: Integer
+                }
 
 sputOptions :: Parser SputOptions
 sputOptions =
@@ -141,6 +153,19 @@ topicOption = a_topic <|> b_topic <|> c_topic
     b_topic = O.flag' RandomTopicName (O.long "random-topic" <> O.help "Generate random topic name")
     c_topic = ClientTopicName <$> O.strOption (O.long "client-topic" <> O.help "Topic Name with a unique random prefix for each client")
 
+srangeOptions :: Parser SrangeOptions
+srangeOptions =
+  SrangeOptions
+    <$> O.strOption (O.long "topic"
+                                 <> O.short 't'
+                                 <> O.help "Topic Name")
+    <*> O.option O.auto (O.long "start"
+                      <> O.short 's'
+                      <> O.help "Message ID to start from")
+    <*> O.option O.auto (O.long "maxn"
+                      <> O.short 'n'
+                      <> O.help "Number of messages to fetch each time")
+
 -------------------------------------------------------------------------------
 
 sput :: ByteString -> SputOptions -> MVar Int -> Socket ->  IO ()
@@ -178,6 +203,73 @@ preparePubRequest sock pubLevel pubMethod =
                 ]
       hiCommand = HESP.mkArrayFromList [ HESP.mkBulkString "hi"
                                        , HESP.mkMapFromList mapping
+                                       ]
+   in do HESP.sendMsg sock hiCommand
+         resps <- HESP.recvMsgs sock 1024
+         case resps V.! 0 of
+           Left x  -> error x
+           Right m -> return $ extractClientId m
+
+-------------------------------------------------------------------------------
+
+srange :: Socket -> SrangeOptions -> IO ()
+srange sock SrangeOptions{..} = do
+  clientid <- prepareSrangeRequest sock
+  void $ showSpeed "srange" rangeStartFrom (action clientid)
+  where
+    action :: ByteString
+           -> Integer
+           -> IO (Integer, Int) -- (sid', flow)
+    action clientid sid = do
+      HESP.sendMsg sock $ srangeRequest clientid rangeTopicName
+        (encodeUtf8 . show $ sid) "" 0 rangeMaxn
+      datas <- HESP.recvMsgs sock 1024
+      flows <- mapM processMsg datas
+      let isEnd = V.last flows < 0
+      let realDatas = if isEnd then V.init datas else datas
+          realFlows = if isEnd then V.init flows else flows
+          msgNum = L.length realDatas
+      return (sid + toInteger msgNum, sum realFlows)
+    processMsg :: Either String HESP.Message -> IO Int
+    processMsg msg = do
+      case msg of
+        Right x ->
+          case x of
+            HESP.MatchPush "srange" args -> do
+              let resp = fromJust $ HESP.getBulkStringParam args 2
+              case resp of
+                "OK"   -> do
+                  -- let entryid = fromJust $ HESP.getBulkStringParam args 3
+                  let entrydata = fromJust $ HESP.getBulkStringParam args 4
+                      entrydataBytes = BS.length entrydata
+                  -- print entryid
+                  return entrydataBytes
+                "DONE" -> return (-1)
+                _      -> error "unexpected response"
+            _                            -> error "unexpected command"
+        Left _  -> error "unexpected message"
+
+srangeRequest :: ByteString
+              -> ByteString
+              -> ByteString
+              -> ByteString
+              -> Integer
+              -> Integer
+              -> HESP.Message
+srangeRequest clientid topic sid eid offset maxn =
+  HESP.mkArrayFromList [ HESP.mkBulkString "srange"
+                       , HESP.mkBulkString clientid
+                       , HESP.mkBulkString topic
+                       , HESP.mkBulkString sid
+                       , HESP.mkBulkString eid
+                       , HESP.Integer offset
+                       , HESP.Integer maxn
+                       ]
+
+prepareSrangeRequest :: Socket -> IO ByteString
+prepareSrangeRequest sock =
+  let hiCommand = HESP.mkArrayFromList [ HESP.mkBulkString "hi"
+                                       , HESP.mkMapFromList []
                                        ]
    in do HESP.sendMsg sock hiCommand
          resps <- HESP.recvMsgs sock 1024
@@ -235,6 +327,24 @@ runPrintSpeed label microsec numBytes = go 0 0
 
 genRandomByteString :: IO ByteString
 genRandomByteString = UUID.toASCIIBytes <$> UUID.nextRandom
+
+showSpeed :: forall a . String -> a -> (a -> IO (a, Int)) -> IO a
+showSpeed label start act = go 0 0.0 start
+  where
+    go :: Int -> Double -> a -> IO a
+    go flow time input = do
+      startTime <- getPOSIXTime
+      (output, numBytes) <- act input
+      endTime <- getPOSIXTime
+      let deltaT = realToFrac $ endTime - startTime
+      let flow' = flow + numBytes
+      let time' = time + deltaT
+      if time' > 1
+         then do let speed = (fromIntegral flow') / time' / 1024 / 1024
+                 putStrLn $ "\r=> " <> label <> " speed: "
+                                   <> showFFloat (Just 2) speed " MiB/s"
+                 go 0 0.0 output
+         else go flow' time' output
 
 encodeUtf8 :: String -> ByteString
 encodeUtf8 = Text.encodeUtf8 . Text.pack

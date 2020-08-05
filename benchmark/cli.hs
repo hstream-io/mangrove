@@ -1,13 +1,13 @@
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE LambdaCase        #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards   #-}
 
 module Main (main) where
 
 import           Control.Applicative   ((<**>), (<|>))
 import           Control.Concurrent    (Chan, MVar)
 import qualified Control.Concurrent    as Conc
-import           Control.Monad         (replicateM, when, void)
+import           Control.Monad         (replicateM, void, when)
 import           Data.ByteString       (ByteString)
 import qualified Data.ByteString       as BS
 import qualified Data.ByteString.Char8 as BC

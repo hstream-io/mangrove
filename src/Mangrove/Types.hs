@@ -51,9 +51,6 @@ module Mangrove.Types
   , deleteClientConsume
   , takeConsumeElements
   , withConsumeElements
-
-    -- * Client requests
-  , RequestType (..)
   ) where
 
 import qualified Colog
@@ -77,8 +74,7 @@ import           Data.Text                   (Text)
 import           Data.UUID                   (UUID)
 import qualified Data.UUID                   as UUID
 import qualified Data.UUID.V4                as UUID
-import qualified Data.Vector                 as V
-import           Data.Word                   (Word64, Word32)
+import           Data.Word                   (Word32, Word64)
 import qualified GHC.Conc                    as Conc
 import           GHC.Generics                (Generic)
 import           Network.Socket              (Socket)
@@ -296,18 +292,6 @@ withConsumeElements client topic maxn f =
       Nothing -> f ms >> return table
       Just es -> let (xs, ys) = S.splitAt maxn es
                   in f (Just xs) >> return (HMap.adjust (const ys) topic table)
-
--------------------------------------------------------------------------------
--- Client requests
-
-data RequestType
-  = Handshake (Map HESP.Message HESP.Message)
-  | SPut ClientId ByteString ByteString
-  | SPuts ClientId ByteString (V.Vector ByteString)
-  | SGet ClientId ByteString (Maybe Word64) (Maybe Word64) Integer
-  | SGetCtrl ClientId ByteString Integer
-  | SRange ClientId ByteString (Maybe Word64) (Maybe Word64) Integer Integer
-  deriving (Show, Eq)
 
 -------------------------------------------------------------------------------
 -- Logger Settings

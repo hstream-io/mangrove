@@ -1,31 +1,37 @@
 {-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE BangPatterns   #-}
 
 module Main (main) where
 
-import           Control.Applicative   ((<**>), (<|>))
-import           Control.Concurrent    (Chan, MVar)
-import qualified Control.Concurrent    as Conc
-import           Control.Monad         (replicateM, void, when)
-import           Data.ByteString       (ByteString)
-import qualified Data.ByteString       as BS
-import qualified Data.ByteString.Char8 as BC
-import           Data.Char             (ord)
-import           Data.Maybe            (fromJust)
-import qualified Data.Text             as Text
-import qualified Data.Text.Encoding    as Text
-import           Data.Time.Clock.POSIX (getPOSIXTime)
-import qualified Data.UUID             as UUID
-import qualified Data.UUID.V4          as UUID
-import           Data.Vector           (Vector)
-import qualified Data.Vector           as V
-import qualified Network.HESP          as HESP
-import qualified Network.HESP.Commands as HESP
-import           Network.Socket        (HostName, Socket)
-import           Options.Applicative   (Parser)
-import qualified Options.Applicative   as O
-import           Text.Printf           (printf)
+import           Control.Applicative       ((<**>), (<|>))
+import           Control.Concurrent        (Chan, MVar)
+import qualified Control.Concurrent        as Conc
+import           Control.Monad             (replicateM, void, when)
+import           Data.ByteString           (ByteString)
+import qualified Data.ByteString           as BS
+import qualified Data.ByteString.Char8     as BC
+import Network.Socket.ByteString
+import qualified Data.ByteString.Lazy      as LBS
+import qualified Data.ByteString.Lazy.Char8 as LBC
+import           Data.Char                 (ord)
+import           Data.Maybe                (fromJust)
+import qualified Data.Text                 as Text
+import qualified Data.Text.Encoding        as Text
+import           Data.Time.Clock.POSIX     (getPOSIXTime)
+import qualified Data.UUID                 as UUID
+import qualified Data.UUID.V4              as UUID
+import           Data.Vector               (Vector)
+import qualified Data.Vector               as V
+import qualified Network.HESP              as HESP
+import qualified Network.HESP.Commands     as HESP
+import           Network.Socket            (HostName, Socket)
+import           Options.Applicative       (Parser)
+import qualified Options.Applicative       as O
+import           Text.Printf               (printf)
+
+import System.IO.Unsafe
 
 -------------------------------------------------------------------------------
 
@@ -111,6 +117,8 @@ appOptions =
                         <> O.short 'v'
                         <> O.help "Verbose")
 
+-------------------------------------------------------------------------------
+
 data Command = SputCommand SputOptions
              | SrangeCommand SrangeOptions
 
@@ -120,51 +128,6 @@ commandOptions = SputCommand <$> O.hsubparser sputCommand
   where
     sputCommand = O.command "sput" (O.info sputOptions (O.progDesc "SPUT -- publish messages to stream"))
     srangeCommand = O.command "srange" (O.info srangeOptions (O.progDesc "SRANGE -- get messages from stream"))
-
-data SputOptions =
-  SputOptions { numOfBytes :: Int
-              , topicName  :: ProducerTopicName
-              , pubLevel   :: Int
-              , pubMethod  :: Int
-              }
-
-sputOptions :: Parser SputOptions
-sputOptions =
-  SputOptions
-    <$> O.option O.auto (O.long "bytes"
-                      <> O.short 'b'
-                      <> O.help "Number of bytes to be sent each times")
-    <*> producerTopicOption
-    <*> O.option O.auto (O.long "pub-level"
-                      <> O.short 'l'
-                      <> O.showDefault
-                      <> O.value 1
-                      <> O.help "Pub-Level, 0 or 1")
-    <*> O.option O.auto (O.long "pub-method"
-                      <> O.short 'm'
-                      <> O.showDefault
-                      <> O.value 0
-                      <> O.help "PubMethod, 0 or 1")
-
-data SrangeOptions =
-  SrangeOptions { rangeTopicName :: ConsumerTopicName
-                , rangeStartFrom :: Integer
-                , rangeMaxn      :: Integer
-                , rangeIsEager   :: Bool
-                }
-
-srangeOptions :: Parser SrangeOptions
-srangeOptions =
-  SrangeOptions
-    <$> consumerTopicOption
-    <*> O.option O.auto (O.long "start"
-                      <> O.short 's'
-                      <> O.help "Message ID to start from")
-    <*> O.option O.auto (O.long "maxn"
-                      <> O.short 'n'
-                      <> O.help "Max Number of messages to fetch each time")
-    <*> O.flag False True (O.long "eager"
-                        <> O.help "Should we continue consuming if reach the end (at this moment)")
 
 data TopicName = TopicName String
                | ClientTopicName String
@@ -190,40 +153,137 @@ consumerTopicOption :: Parser ConsumerTopicName
 consumerTopicOption = CTopicName <$> topicOption
 
 -------------------------------------------------------------------------------
+-- Write
+
+data SputOptions =
+  SputOptions { writeTopicName  :: ProducerTopicName
+              , writeNumOfBytes :: Int
+              , writeBatchSize  :: Int
+              , pubLevel        :: Int
+              , pubMethod       :: Int
+              }
+
+sputOptions :: Parser SputOptions
+sputOptions =
+  SputOptions
+    <$> producerTopicOption
+    <*> O.option O.auto (O.long "bytes"
+                      <> O.short 'b'
+                      <> O.help "Number of bytes to be sent each times")
+    <*> O.option O.auto (O.long "batch"
+                      <> O.short 'n'
+                      <> O.help "Size of batch sending")
+    <*> O.option O.auto (O.long "pub-level"
+                      <> O.short 'l'
+                      <> O.showDefault
+                      <> O.value 1
+                      <> O.help "Pub-Level, 0 or 1")
+    <*> O.option O.auto (O.long "pub-method"
+                      <> O.short 'm'
+                      <> O.showDefault
+                      <> O.value 0
+                      <> O.help "PubMethod, 0 or 1")
+
+--sput :: SputOptions
+--     -> Double -> Double
+--     -> Chan Int -> MVar Int
+--     -> Socket
+--     -> IO ()
+--sput SputOptions{..} samplingInterval maxTime clientLabels sendedBytes sock = do
+--  clientid <- preparePubRequest sock (fromIntegral pubLevel) (fromIntegral pubMethod)
+--  clientLabel <- BC.pack . show <$> Conc.readChan clientLabels
+--  speedSampling samplingInterval maxTime sendedBytes (action clientid clientLabel pubLevel)
+--  where
+--    action clientid label level = do
+--      --print $ "--> " <> show writeNumOfBytes
+--      --print $ "==> " <> show writeBatchSize
+--      topic <- genTopic label writeTopicName
+--      HESP.sendMsg sock $ sputRequest clientid topic payloads
+--      case level of
+--        0 -> return $ writeNumOfBytes * writeBatchSize
+--        1 -> do _ <- HESP.recvMsgs sock 1024
+--                -- TODO: assert result is OK
+--                return $ writeNumOfBytes * writeBatchSize
+--        _ -> error "Invalid pubLevel."
+--    genTopic label = \case
+--      PTopicName (TopicName name)       -> return $ encodeUtf8 name
+--      PTopicName (ClientTopicName name) -> return $ label <> encodeUtf8 name
+--      PRandomTopicName                  -> genRandomByteString
+--    --payloads = V.replicate writeBatchSize $
+--    --  HESP.mkBulkString $ BS.replicate writeNumOfBytes (fromIntegral $ ord 'x')
+
+--    payloads = encodeVectorMsgs $ V.replicate writeBatchSize $
+--      HESP.mkBulkString $ BS.replicate writeNumOfBytes (fromIntegral $ ord 'x')
+--    --payloads = encodeVectorMsgs $ V.replicate 10000 $
+--    --  HESP.mkBulkString $ BS.replicate 1 (fromIntegral $ ord 'x')
 
 sput :: SputOptions
      -> Double -> Double
      -> Chan Int -> MVar Int
      -> Socket
      -> IO ()
-sput SputOptions{..} samplingInterval maxTime clientLabels sendedBytes sock = do
-  clientid <- preparePubRequest sock (fromIntegral pubLevel) (fromIntegral pubMethod)
+sput opts samplingInterval maxTime clientLabels sendedBytes sock = do
+  let numOfBytes = writeNumOfBytes opts
+      batchSize = writeBatchSize opts
+      realBytes = numOfBytes * batchSize
+  clientid <- preparePubRequest sock (fromIntegral $ pubLevel opts) (fromIntegral $ pubMethod opts)
   clientLabel <- BC.pack . show <$> Conc.readChan clientLabels
-  speedSampling samplingInterval maxTime sendedBytes (action clientid clientLabel pubLevel)
+  let !payloadBS = sputReqLBS clientid "aa"
+                <> (encodeMsgs $! genPayloads batchSize numOfBytes)
+                <> (unsafePerformIO $ print "yaya" >> return "")
+
+  speedSampling samplingInterval maxTime sendedBytes
+                (action clientid clientLabel (pubLevel opts) payloadBS realBytes)
   where
-    action clientid label level = do
-      topic <- genTopic label topicName
-      HESP.sendMsg sock $ sputRequest clientid topic payload
+    action clientid label level !payloads realBytes = do
+      topic <- genTopic label (writeTopicName opts)
+      --HESP.sendMsg sock $ sputRequest clientid topic payloads
+      --HESP.sendLazy sock payloads
+      --print $ BS.length payloads
+      sendAll sock payloads
+      --print $ sputReqLBS clientid topic payloads
       case level of
-        0 -> return numOfBytes
+        0 -> return $ realBytes
         1 -> do _ <- HESP.recvMsgs sock 1024
                 -- TODO: assert result is OK
-                return numOfBytes
+                --return $ realBytes
+                return $ BS.length payloads
         _ -> error "Invalid pubLevel."
     genTopic label = \case
       PTopicName (TopicName name)       -> return $ encodeUtf8 name
       PTopicName (ClientTopicName name) -> return $ label <> encodeUtf8 name
       PRandomTopicName                  -> genRandomByteString
-    payload = BS.replicate numOfBytes (fromIntegral $ ord 'x')
+    --genPayloads batchSize numOfBytes = encodeVectorMsgs $ V.replicate batchSize $
+    --  HESP.mkBulkString $ BS.replicate numOfBytes (fromIntegral $ ord 'x')
+    genPayloads batchSize numOfBytes = replicate batchSize $
+      HESP.mkBulkString $ BS.replicate numOfBytes (fromIntegral $ ord 'x')
 
-sputRequest :: ByteString -> ByteString -> ByteString -> HESP.Message
-sputRequest clientid topic payload =
-  let cs = [ HESP.mkBulkString "sput"
-           , HESP.mkBulkString clientid
-           , HESP.mkBulkString topic
-           , HESP.mkBulkString payload
-           ]
-   in HESP.mkArrayFromList cs
+--sputRequest :: ByteString -> ByteString -> Vector HESP.Message -> HESP.Message
+--sputRequest clientid topic payloads =
+--  let cs = [ HESP.mkBulkString "sput"
+--           , HESP.mkBulkString clientid
+--           , HESP.mkBulkString topic
+--           --, HESP.mkBulkString payloads
+--           --, HESP.mkArray payloads
+--           ]
+--   in HESP.mkArrayFromList cs
+
+sputReqLBS clientid topic =
+  let ms =  [ HESP.serialize $ HESP.mkBulkString "sput"
+            , HESP.serialize $ HESP.mkBulkString clientid
+            , HESP.serialize $ HESP.mkBulkString topic
+            ]
+      len = BC.pack . show $ length ms + 1
+   in BC.cons '*' $ len <> "\r\n" <> BS.concat ms
+
+encodeMsgs :: [HESP.Message] -> ByteString
+encodeMsgs ms =
+  let msgs = BS.concat $ map HESP.serialize ms
+   in BC.cons '*' $ (BC.pack . show $ length ms) <> "\r\n" <> msgs
+
+  --if V.null ms
+  --   then ""
+  --   else (LBS.byteString HESP.serialize (V.head ms)) <> encodeMsgs (V.tail ms)
 
 preparePubRequest :: Socket -> Integer -> Integer -> IO ByteString
 preparePubRequest sock pubLevel pubMethod =
@@ -240,6 +300,27 @@ preparePubRequest sock pubLevel pubMethod =
            Right m -> return $ extractClientId m
 
 -------------------------------------------------------------------------------
+-- Read
+
+data SrangeOptions =
+  SrangeOptions { readTopicName  :: ConsumerTopicName
+                , rangeStartFrom :: Integer
+                , rangeMaxn      :: Integer
+                , rangeIsEager   :: Bool
+                }
+
+srangeOptions :: Parser SrangeOptions
+srangeOptions =
+  SrangeOptions
+    <$> consumerTopicOption
+    <*> O.option O.auto (O.long "start"
+                      <> O.short 's'
+                      <> O.help "Message ID to start from")
+    <*> O.option O.auto (O.long "maxn"
+                      <> O.short 'n'
+                      <> O.help "Max Number of messages to fetch each time")
+    <*> O.flag False True (O.long "eager"
+                        <> O.help "Should we continue consuming if reach the end (at this moment)")
 
 srange :: Bool
        -> SrangeOptions
@@ -256,7 +337,7 @@ srange verbose SrangeOptions{..} samplingInterval maxTime clientLabels receivedB
   where
     action :: ByteString -> ByteString -> MVar (Integer, Bool) -> IO Int
     action clientid label lastState = do
-      topic <- genTopic label rangeTopicName
+      topic <- genTopic label readTopicName
       (sid, isDone) <- Conc.takeMVar lastState
       when isDone $
         HESP.sendMsg sock $

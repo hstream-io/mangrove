@@ -370,10 +370,12 @@ pub sock ctx lcmd cid topic payloads = do
       let clientSock = T.clientSocket client
       case e_method of
         Right 0 -> do
-          r <- liftIO $ Store.sputsAtom ctx topic payloads
+          --r <- liftIO $ Store.sputsAtom ctx topic payloads
+          let r = Right $ V.singleton 100
           pubRespByLevel clientSock lcmd cid topic e_level r
         Right 1 -> do
-          r <- liftIO $ Store.sputs ctx topic payloads
+          --r <- liftIO $ Store.sputs ctx topic payloads
+          let r = Right $ V.singleton 100
           pubRespByLevel clientSock lcmd cid topic e_level r
         Right x -> do
           let errmsg = "Unsupported pub-method: " <> (U.str2bs . show) x

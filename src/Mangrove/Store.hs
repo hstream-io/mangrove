@@ -2,9 +2,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Mangrove.Store
-  ( SgetChunks (..)
-  , sget
-  , sgetAll
+  ( sgetAll
 
   , sput
   , sputs
@@ -13,8 +11,8 @@ module Mangrove.Store
   , readStreamEntry
   ) where
 
-import           Control.Exception      (Exception, SomeException, try)
-import           Control.Monad.IO.Class (MonadIO, liftIO)
+import           Control.Exception      (Exception, try)
+import           Control.Monad.IO.Class (MonadIO)
 import           Control.Monad.Reader   (runReaderT)
 import           Data.ByteString        (ByteString)
 import           Data.Either            (fromLeft, fromRight, isLeft)
@@ -29,36 +27,6 @@ import           Mangrove.Types         (Element)
 import           Mangrove.Utils         (bs2str)
 
 -------------------------------------------------------------------------------
-
--- TODO: remove me
-data SgetChunks = SgetStep [Element]
-                | SgetDone
-                | SgetFail SomeException
-
--- TODO: remove me
--- | Get a "snapshot" of elements.
-sget :: forall m . MonadIO m
-     => LogStore.Context          -- ^ db context
-     -> ByteString                -- ^ topic
-     -> Maybe LogStore.EntryID    -- ^ start entry id
-     -> Maybe LogStore.EntryID    -- ^ end entry id
-     -> Int                       -- ^ max chunk size
-     -> Int                       -- ^ offset
-     -> (SgetChunks -> m ())
-     -> m ()
-sget db topic start end n offset process = stream >>= go
-  where
-    stream :: m (Serial Element)
-    stream = liftIO $ S.drop offset <$> readStreamEntry db topic start end
-    go :: Serial Element -> m ()
-    go s = do
-      e_trunks <- liftIO $ try . S.toList $ S.take n s
-      case e_trunks of
-        Left e       -> process $ SgetFail e
-        Right trunks ->
-          if null trunks
-             then process SgetDone
-             else process (SgetStep trunks) >> (go $ S.drop n s)
 
 -- | Get a "snapshot" of elements.
 --

@@ -10,7 +10,7 @@ extra-deps:
     commit: c75489dc628e43ea164e687f56e0cf2d1ff486c1
 
   - git: https://github.com/hstream-io/hesp.git
-    commit: ac22865e0b4cc216941582b2da9f360918b98333
+    commit: 8aaf1917ec08e0f6305f75e9319c1f47ac52d79f
 
   - binary-strict-0.4.8.6@sha256:456da8c1452a18349fbb02134ba608cf7420014cb93e9c39e7e4b99de1c48a7e,2222
   - streamly-bytestring-0.1.2@sha256:cc828f41d1c714c711d38fb213b4ed186febabba598ab080e13255f69c20b13c,2469

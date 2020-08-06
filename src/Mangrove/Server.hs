@@ -13,6 +13,7 @@ import           Control.Monad.Reader     (ask, liftIO)
 import           Data.ByteString          (ByteString)
 import qualified Data.ByteString.Char8    as BSC
 import qualified Data.ByteString.Lazy     as LBS
+import           Data.Map.Strict          (Map)
 import qualified Data.Text                as Text
 import           Data.Text.Encoding       (decodeUtf8)
 import           Data.Vector              (Vector)
@@ -26,7 +27,7 @@ import           Log.Store.Base           (Context, EntryID,
 import qualified Mangrove.Server.Response as I
 import qualified Mangrove.Store           as Store
 import qualified Mangrove.Streaming       as S
-import           Mangrove.Types           (App, Env (..), RequestType (..))
+import           Mangrove.Types           (App, ClientId, Env (..))
 import qualified Mangrove.Types           as T
 import           Mangrove.Utils           ((.|.))
 import qualified Mangrove.Utils           as U
@@ -34,6 +35,16 @@ import qualified Network.HESP             as HESP
 import qualified Network.HESP.Commands    as HESP
 
 -------------------------------------------------------------------------------
+
+-- | Client request types
+data RequestType
+  = Handshake (Map HESP.Message HESP.Message)
+  | SPut ClientId ByteString ByteString
+  | SPuts ClientId ByteString (V.Vector ByteString)
+  | SGet ClientId ByteString (Maybe Word64) (Maybe Word64) Integer
+  | SGetCtrl ClientId ByteString Integer
+  | SRange ClientId ByteString (Maybe Word64) (Maybe Word64) Integer Integer
+  deriving (Show, Eq)
 
 -- | Parse client request and then send response to client.
 onRecvMsg :: Socket
@@ -213,7 +224,7 @@ processSRange _ _ _ = return Nothing
 presget :: Socket
         -> Context
         -> ByteString
-        -> T.ClientId
+        -> ClientId
         -> ByteString
         -> Maybe EntryID
         -> Maybe EntryID
@@ -242,7 +253,7 @@ presget sock ctx lcmd cid topic sid eid offset = do
                        True  -> I.mkCmdPush cid lcmd topic "OK"
           HESP.sendMsg sock resp
 
-sgetctrl :: Socket -> ByteString -> T.ClientId -> ByteString -> Int -> App ()
+sgetctrl :: Socket -> ByteString -> ClientId -> ByteString -> Int -> App ()
 sgetctrl sock lcmd cid topic maxn = do
   Env{serverStatus = serverStatus} <- ask
   m_client <- liftIO $ T.getClient cid serverStatus
@@ -272,7 +283,7 @@ sgetctrl sock lcmd cid topic maxn = do
 pub :: Socket
     -> Context
     -> ByteString
-    -> T.ClientId
+    -> ClientId
     -> ByteString
     -> Vector ByteString
     -> App ()
@@ -307,7 +318,7 @@ pub sock ctx lcmd cid topic payloads = do
 
 pubRespByLevel :: Socket
                -> ByteString
-               -> T.ClientId
+               -> ClientId
                -> ByteString
                -> Either ByteString Integer
                -> Either (Vector EntryID, SomeException) (Vector EntryID)

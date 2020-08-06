@@ -111,6 +111,8 @@ appOptions =
                         <> O.short 'v'
                         <> O.help "Verbose")
 
+-------------------------------------------------------------------------------
+
 data Command = SputCommand SputOptions
              | SrangeCommand SrangeOptions
 
@@ -120,51 +122,6 @@ commandOptions = SputCommand <$> O.hsubparser sputCommand
   where
     sputCommand = O.command "sput" (O.info sputOptions (O.progDesc "SPUT -- publish messages to stream"))
     srangeCommand = O.command "srange" (O.info srangeOptions (O.progDesc "SRANGE -- get messages from stream"))
-
-data SputOptions =
-  SputOptions { numOfBytes :: Int
-              , topicName  :: ProducerTopicName
-              , pubLevel   :: Int
-              , pubMethod  :: Int
-              }
-
-sputOptions :: Parser SputOptions
-sputOptions =
-  SputOptions
-    <$> O.option O.auto (O.long "bytes"
-                      <> O.short 'b'
-                      <> O.help "Number of bytes to be sent each times")
-    <*> producerTopicOption
-    <*> O.option O.auto (O.long "pub-level"
-                      <> O.short 'l'
-                      <> O.showDefault
-                      <> O.value 1
-                      <> O.help "Pub-Level, 0 or 1")
-    <*> O.option O.auto (O.long "pub-method"
-                      <> O.short 'm'
-                      <> O.showDefault
-                      <> O.value 0
-                      <> O.help "PubMethod, 0 or 1")
-
-data SrangeOptions =
-  SrangeOptions { rangeTopicName :: ConsumerTopicName
-                , rangeStartFrom :: Integer
-                , rangeMaxn      :: Integer
-                , rangeIsEager   :: Bool
-                }
-
-srangeOptions :: Parser SrangeOptions
-srangeOptions =
-  SrangeOptions
-    <$> consumerTopicOption
-    <*> O.option O.auto (O.long "start"
-                      <> O.short 's'
-                      <> O.help "Message ID to start from")
-    <*> O.option O.auto (O.long "maxn"
-                      <> O.short 'n'
-                      <> O.help "Max Number of messages to fetch each time")
-    <*> O.flag False True (O.long "eager"
-                        <> O.help "Should we continue consuming if reach the end (at this moment)")
 
 data TopicName = TopicName String
                | ClientTopicName String
@@ -190,6 +147,36 @@ consumerTopicOption :: Parser ConsumerTopicName
 consumerTopicOption = CTopicName <$> topicOption
 
 -------------------------------------------------------------------------------
+-- Write
+
+data SputOptions =
+  SputOptions { writeTopicName  :: ProducerTopicName
+              , writeNumOfBytes :: Int
+              , writeBatchSize  :: Int
+              , pubLevel        :: Int
+              , pubMethod       :: Int
+              }
+
+sputOptions :: Parser SputOptions
+sputOptions =
+  SputOptions
+    <$> producerTopicOption
+    <*> O.option O.auto (O.long "bytes"
+                      <> O.short 'b'
+                      <> O.help "Number of bytes to be sent each times")
+    <*> O.option O.auto (O.long "batch"
+                      <> O.short 'n'
+                      <> O.help "Size of batch sending")
+    <*> O.option O.auto (O.long "pub-level"
+                      <> O.short 'l'
+                      <> O.showDefault
+                      <> O.value 1
+                      <> O.help "Pub-Level, 0 or 1")
+    <*> O.option O.auto (O.long "pub-method"
+                      <> O.short 'm'
+                      <> O.showDefault
+                      <> O.value 0
+                      <> O.help "PubMethod, 0 or 1")
 
 sput :: SputOptions
      -> Double -> Double
@@ -202,26 +189,27 @@ sput SputOptions{..} samplingInterval maxTime clientLabels sendedBytes sock = do
   speedSampling samplingInterval maxTime sendedBytes (action clientid clientLabel pubLevel)
   where
     action clientid label level = do
-      topic <- genTopic label topicName
-      HESP.sendMsg sock $ sputRequest clientid topic payload
+      topic <- genTopic label writeTopicName
+      HESP.sendMsg sock $ sputRequest clientid topic payloads
       case level of
-        0 -> return numOfBytes
+        0 -> return $ writeNumOfBytes * writeBatchSize
         1 -> do _ <- HESP.recvMsgs sock 1024
                 -- TODO: assert result is OK
-                return numOfBytes
+                return $ writeNumOfBytes * writeBatchSize
         _ -> error "Invalid pubLevel."
     genTopic label = \case
       PTopicName (TopicName name)       -> return $ encodeUtf8 name
       PTopicName (ClientTopicName name) -> return $ label <> encodeUtf8 name
       PRandomTopicName                  -> genRandomByteString
-    payload = BS.replicate numOfBytes (fromIntegral $ ord 'x')
+    payloads = V.replicate writeBatchSize $
+      HESP.mkBulkString $ BS.replicate writeNumOfBytes (fromIntegral $ ord 'x')
 
-sputRequest :: ByteString -> ByteString -> ByteString -> HESP.Message
-sputRequest clientid topic payload =
+sputRequest :: ByteString -> ByteString -> Vector HESP.Message -> HESP.Message
+sputRequest clientid topic payloads =
   let cs = [ HESP.mkBulkString "sput"
            , HESP.mkBulkString clientid
            , HESP.mkBulkString topic
-           , HESP.mkBulkString payload
+           , HESP.mkArray payloads
            ]
    in HESP.mkArrayFromList cs
 
@@ -240,6 +228,27 @@ preparePubRequest sock pubLevel pubMethod =
            Right m -> return $ extractClientId m
 
 -------------------------------------------------------------------------------
+-- Read
+
+data SrangeOptions =
+  SrangeOptions { readTopicName  :: ConsumerTopicName
+                , rangeStartFrom :: Integer
+                , rangeMaxn      :: Integer
+                , rangeIsEager   :: Bool
+                }
+
+srangeOptions :: Parser SrangeOptions
+srangeOptions =
+  SrangeOptions
+    <$> consumerTopicOption
+    <*> O.option O.auto (O.long "start"
+                      <> O.short 's'
+                      <> O.help "Message ID to start from")
+    <*> O.option O.auto (O.long "maxn"
+                      <> O.short 'n'
+                      <> O.help "Max Number of messages to fetch each time")
+    <*> O.flag False True (O.long "eager"
+                        <> O.help "Should we continue consuming if reach the end (at this moment)")
 
 srange :: Bool
        -> SrangeOptions
@@ -256,7 +265,7 @@ srange verbose SrangeOptions{..} samplingInterval maxTime clientLabels receivedB
   where
     action :: ByteString -> ByteString -> MVar (Integer, Bool) -> IO Int
     action clientid label lastState = do
-      topic <- genTopic label rangeTopicName
+      topic <- genTopic label readTopicName
       (sid, isDone) <- Conc.takeMVar lastState
       when isDone $
         HESP.sendMsg sock $

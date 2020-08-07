@@ -20,6 +20,7 @@ module Mangrove.Types
     -- * Server
     -- ** Server settings
   , ServerSettings (..)
+  , DatabaseSetting (..)
     -- * Server status
   , ServerStatus
   , newServerStatus
@@ -117,25 +118,39 @@ runApp env app = runReaderT (unApp app) env
 -- Server settings
 
 data ServerSettings m =
-  ServerSettings { serverHost        :: !NS.HostName
-                 , serverPort        :: !Int
-                 , dbPath            :: !String
-                 , cfWriteBufferSize :: !Word64
-                 , dbWriteBufferSize :: !Word64
-                 , enableDBStats     :: !Bool
-                 , dbStatsPeriodSec  :: !Word32
-                 , loggerSetting     :: !(LoggerSetting m)
+  ServerSettings { serverHost      :: !NS.HostName
+                 , serverPort      :: !Int
+                 , databaseSetting :: !DatabaseSetting
+                 , loggerSetting   :: !(LoggerSetting m)
                  }
+  deriving (Generic)
+
+data DatabaseSetting =
+  DatabaseSetting { dbPath          :: !String
+                  , writeBufferSize :: !Word64
+                  , enableDBStats   :: !Bool
+                  , statsPeriodSec  :: !Word32
+                  }
   deriving (Generic)
 
 instance MonadIO m => FromJSON (ServerSettings m) where
   parseJSON =
     let opts = Aeson.defaultOptions { Aeson.fieldLabelModifier = flm }
-        flm "serverHost"    = "host"
-        flm "serverPort"    = "port"
-        flm "dbPath"        = "db-path"
-        flm "loggerSetting" = "logger"
-        flm x               = x
+        flm "serverHost"      = "host"
+        flm "serverPort"      = "port"
+        flm "loggerSetting"   = "logger"
+        flm "databaseSetting" = "database"
+        flm x                 = x
+     in Aeson.genericParseJSON opts
+
+instance FromJSON DatabaseSetting where
+  parseJSON =
+    let opts = Aeson.defaultOptions { Aeson.fieldLabelModifier = flm }
+        flm "dbPath"          = "path"
+        flm "writeBufferSize" = "write-buffer-size"
+        flm "enableDBStats"   = "enable-stats"
+        flm "statsPeriodSec"  = "stats-period"
+        flm x                 = x
      in Aeson.genericParseJSON opts
 
 newtype LoggerSetting m =

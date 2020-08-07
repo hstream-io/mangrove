@@ -16,7 +16,8 @@ import           Network.Socket         (Socket)
 import           System.Directory       (createDirectoryIfMissing)
 
 import qualified Log.Store.Base         as LogStore
-import           Mangrove               (App, Env (..), ServerSettings (..))
+import           Mangrove               (App, DatabaseSetting (..), Env (..),
+                                         ServerSettings (..))
 import qualified Mangrove               as Mangrove
 
 main :: IO ()
@@ -26,13 +27,13 @@ main = do
   let env = Env { serverSettings = settings
                 , serverStatus   = status
                 }
+  let DatabaseSetting{..} = databaseSetting
   -- create db directory (and all parent directories) if not exists.
   createDirectoryIfMissing True dbPath
   -- run server
   bracket
     (LogStore.initialize $
-     LogStore.Config dbPath cfWriteBufferSize dbWriteBufferSize
-      enableDBStats dbStatsPeriodSec)
+     LogStore.Config dbPath writeBufferSize 0 enableDBStats statsPeriodSec)
     (runReaderT LogStore.shutDown)
     (Mangrove.runApp env . runServer)
 

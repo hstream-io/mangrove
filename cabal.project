@@ -8,8 +8,8 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/hstream-io/log-store
-  tag: 0eaaec786694edfdcc05da4c974b5564944282af
+  tag: 3819fa8e0fba421cbb9e7c13b4a6c91a34af231e
 source-repository-package
   type: git
   location: https://github.com/hstream-io/haskell-rocksdb-bindings
-  tag: c96abb4ed9d79eab78ef921494ac1e1d84f15a04
+  tag: c75489dc628e43ea164e687f56e0cf2d1ff486c1

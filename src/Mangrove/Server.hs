@@ -44,6 +44,8 @@ data RequestType
   | SGet ClientId ByteString (Maybe Word64) (Maybe Word64) Integer
   | SGetCtrl ClientId ByteString Integer
   | SRange ClientId ByteString (Maybe Word64) (Maybe Word64) Integer Integer
+  | XAdd ByteString ByteString
+  | XRange ByteString (Maybe Word64) (Maybe Word64) (Maybe Integer)
   deriving (Show, Eq)
 
 -- | Parse client request and then send response to client.
@@ -74,6 +76,8 @@ parseRequest msg = do
     "sget"   -> parseSGet paras
     "sgetc"  -> parseSGetCtrl paras
     "srange" -> parseSRange paras
+    "xadd"   -> parseXAdd paras
+    "xrange" -> parseXRange paras
     _        -> Left $ "Unrecognized request " <> n <> "."
 
 processRequest :: Socket -> Context -> RequestType -> App (Maybe ())
@@ -83,6 +87,8 @@ processRequest sock ctx rt = processHandshake sock ctx rt
                          .|. processSGet      sock ctx rt
                          .|. processSGetCtrl  sock rt
                          .|. processSRange    sock ctx rt
+                         .|. processXAdd      sock ctx rt
+                         .|. processXRange    sock ctx rt
 
 -------------------------------------------------------------------------------
 -- Parse client requests
@@ -115,9 +121,9 @@ parseSGet paras = do
   cid    <- T.getClientIdFromASCIIBytes' cidStr
   topic  <- HESP.extractBulkStringParam "Topic"     paras 1
   sids   <- HESP.extractBulkStringParam "Start ID"  paras 2
-  sid    <- validateInt                 "Start ID"  sids
+  sid    <- validateInt                 "Start ID"  sids ""
   eids   <- HESP.extractBulkStringParam "End ID"    paras 3
-  eid    <- validateInt                 "End ID"    eids
+  eid    <- validateInt                 "End ID"    eids ""
   offset <- HESP.extractIntegerParam    "Offset"    paras 4
   return $ SGet cid topic sid eid offset
 
@@ -135,12 +141,42 @@ parseSRange paras = do
   cid    <- T.getClientIdFromASCIIBytes' cidStr
   topic  <- HESP.extractBulkStringParam "Topic"     paras 1
   sids   <- HESP.extractBulkStringParam "Start ID"  paras 2
-  sid    <- validateInt                 "Start ID"  sids
+  sid    <- validateInt                 "Start ID"  sids ""
   eids   <- HESP.extractBulkStringParam "End ID"    paras 3
-  eid    <- validateInt                 "End ID"    eids
+  eid    <- validateInt                 "End ID"    eids ""
   offset <- HESP.extractIntegerParam    "Offset"    paras 4
   maxn <- HESP.extractIntegerParam      "Maxn"      paras 5
   return $ SRange cid topic sid eid offset maxn
+
+parseXAdd :: Vector HESP.Message -> Either ByteString RequestType
+parseXAdd paras = do
+  topic <- HESP.extractBulkStringParam "Topic" paras 0
+  reqid <- HESP.extractBulkStringParam "Entry ID" paras 1
+  _     <- validateBSSimple "*" reqid "Invalid stream ID specified as stream command argument"
+  let kvs = V.drop 2 paras
+  case V.length kvs > 0 && even (V.length kvs) of
+    -- XXX: separate payload generating process
+    True  -> return $ XAdd topic (HESP.serialize $ HESP.mkArray kvs)
+    False -> Left "wrong number of arguments for 'xadd' command"
+
+parseXRange :: Vector HESP.Message -> Either ByteString RequestType
+parseXRange paras = do
+  topic <- HESP.extractBulkStringParam "Topic"     paras 0
+  sids  <- HESP.extractBulkStringParam "Start ID"  paras 1
+  sid   <- validateIntSimple sids "-" "Invalid stream ID specified as stream command argument"
+  eids  <- HESP.extractBulkStringParam "End ID"    paras 2
+  eid   <- validateIntSimple eids "+" "Invalid stream ID specified as stream command argument"
+  case V.length paras of
+    3 -> return $ XRange topic sid eid Nothing
+    5 -> do
+      count  <- HESP.extractBulkStringParam "Option" paras 3
+      _      <- validateBSSimple "count" count "syntax error"
+      maxns  <- HESP.extractBulkStringParam "Maxn"   paras 4
+      e_maxn <- validateIntSimple maxns "" "value is not an integer or out of range"
+      case e_maxn of
+        Just n -> return $ XRange topic sid eid (Just $ toInteger n)
+        _      -> Left "value is not an integer or out of range"
+    _ -> Left "syntax error"
 
 -------------------------------------------------------------------------------
 -- Process client requests
@@ -218,6 +254,36 @@ processSRange sock ctx (SRange cid topic sid eid offset maxn) = do
           HESP.sendMsg clientSock $ I.mkCmdPush cid lcmd topic "DONE"
   return $ Just ()
 processSRange _ _ _ = return Nothing
+
+processXAdd :: Socket -> Context -> RequestType -> App (Maybe ())
+processXAdd sock ctx (XAdd topic payload) = do
+  r <- liftIO $ Store.sput ctx topic payload
+  case r of
+    Right entryID -> do
+      liftIO $ HESP.sendMsg sock $ (HESP.mkBulkString . U.str2bs . show) entryID
+    Left (e :: SomeException) -> do
+      let errmsg = "Message storing failed: " <> (U.str2bs . show) e
+      Colog.logWarning $ decodeUtf8 errmsg
+      liftIO $ HESP.sendMsg sock $ I.mkGeneralError errmsg
+  return $ Just ()
+processXAdd _ _ _ = return Nothing
+
+processXRange :: Socket -> Context -> RequestType -> App (Maybe ())
+processXRange sock ctx (XRange topic sid eid maxn) = do
+  let cut = case maxn of
+        Nothing -> id
+        Just n  -> S.take (fromInteger n)
+  e_s <- liftIO . try $ cut <$> Store.readStreamEntry ctx topic sid eid
+  case e_s of
+    Left (LogStoreLogNotFoundException _) -> do
+      HESP.sendMsg sock $ HESP.mkArrayFromList []
+    Left e  -> throw e
+    Right s -> do
+      elems <- liftIO $ S.toList s
+      let respMsg = HESP.mkArrayFromList $ I.mkSimpleElementResp <$> elems
+      HESP.sendMsg sock respMsg
+  return $ Just ()
+processXRange _ _ _ = return Nothing
 
 -------------------------------------------------------------------------------
 
@@ -350,9 +416,17 @@ pubRespByLevel clientSock lcmd cid topic level r =
 -------------------------------------------------------------------------------
 -- Helpers
 
-validateInt :: ByteString -> ByteString -> Either ByteString (Maybe Word64)
-validateInt label s
-  | s == ""   = Right Nothing
+validateInt :: ByteString -> ByteString -> ByteString -> Either ByteString (Maybe Word64)
+validateInt label s def = validateIntSimple s def (label <> " must be an integer")
+
+validateIntSimple :: ByteString -> ByteString -> ByteString -> Either ByteString (Maybe Word64)
+validateIntSimple s def errMsg
+  | s == def   = Right Nothing
   | otherwise = case readMaybe (BSC.unpack s) of
-      Nothing -> Left $ label <> " must be an integer."
+      Nothing -> Left errMsg
       Just x  -> Right (Just x)
+
+validateBSSimple :: ByteString -> ByteString -> ByteString -> Either ByteString ByteString
+validateBSSimple expected real errMsg
+  | real == expected = Right real
+  | otherwise = Left errMsg

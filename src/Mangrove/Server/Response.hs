@@ -8,6 +8,7 @@ module Mangrove.Server.Response
   , mkSPutRespFail
 
   , mkElementResp
+  , mkSimpleElementResp
 
   , mkCmdPush
   , mkCmdPushError
@@ -71,6 +72,19 @@ mkElementResp cid lcmd topic (p, i) =
                            , HESP.mkBulkString (U.encodeUtf8 i)
                            , HESP.mkBulkString p
                            ]
+
+{-# INLINE mkSimpleElementResp #-}
+mkSimpleElementResp :: (ByteString, Word64)
+                    -> HESP.Message
+mkSimpleElementResp (p, i) =
+  let e_kvs = HESP.deserialize p
+   in case e_kvs of
+        Left s -> mkGeneralError $ "Entry deserialization failed: "
+                                 <> U.str2bs s <> "."
+        Right kvs ->
+          HESP.mkArrayFromList [ HESP.mkBulkString (U.encodeUtf8 i)
+                               , kvs
+                               ]
 
 -------------------------------------------------------------------------------
 

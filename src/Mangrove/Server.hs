@@ -13,6 +13,8 @@ import           Control.Monad.Reader     (ask, liftIO)
 import           Data.ByteString          (ByteString)
 import qualified Data.ByteString.Char8    as BSC
 import qualified Data.ByteString.Lazy     as LBS
+import           Data.CaseInsensitive     (CI)
+import qualified Data.CaseInsensitive     as CI
 import           Data.Map.Strict          (Map)
 import qualified Data.Text                as Text
 import           Data.Text.Encoding       (decodeUtf8)
@@ -70,14 +72,14 @@ parseRequest :: HESP.Message
              -> Either ByteString RequestType
 parseRequest msg = do
   (n, paras) <- HESP.commandParser msg
-  case n of
-    "hi"     -> parseHandshake paras
-    "sput"   -> parseSPuts paras <> parseSPut paras
-    "sget"   -> parseSGet paras
-    "sgetc"  -> parseSGetCtrl paras
-    "srange" -> parseSRange paras
-    "xadd"   -> parseXAdd paras
-    "xrange" -> parseXRange paras
+  case CI.mk n of
+    ("hi"     :: CI ByteString) -> parseHandshake paras
+    ("sput"   :: CI ByteString) -> parseSPuts paras <> parseSPut paras
+    ("sget"   :: CI ByteString) -> parseSGet paras
+    ("sgetc"  :: CI ByteString) -> parseSGetCtrl paras
+    ("srange" :: CI ByteString) -> parseSRange paras
+    ("xadd"   :: CI ByteString) -> parseXAdd paras
+    ("xrange" :: CI ByteString) -> parseXRange paras
     _        -> Left $ "Unrecognized request " <> n <> "."
 
 processRequest :: Socket -> Context -> RequestType -> App (Maybe ())
@@ -416,17 +418,21 @@ pubRespByLevel clientSock lcmd cid topic level r =
 -------------------------------------------------------------------------------
 -- Helpers
 
+-- Return value of `validateInt` and `validateIntSimple`:
+-- Left bs: validation failed
+-- Right Nothing: it matched default value
+-- Right (Just n): validation succeeded
 validateInt :: ByteString -> ByteString -> ByteString -> Either ByteString (Maybe Word64)
-validateInt label s def = validateIntSimple s def (label <> " must be an integer")
+validateInt label s defaultVal = validateIntSimple s defaultVal (label <> " must be an integer")
 
 validateIntSimple :: ByteString -> ByteString -> ByteString -> Either ByteString (Maybe Word64)
-validateIntSimple s def errMsg
-  | s == def   = Right Nothing
+validateIntSimple s defaultVal errMsg
+  | CI.mk s == CI.mk defaultVal = Right Nothing
   | otherwise = case readMaybe (BSC.unpack s) of
       Nothing -> Left errMsg
       Just x  -> Right (Just x)
 
 validateBSSimple :: ByteString -> ByteString -> ByteString -> Either ByteString ByteString
 validateBSSimple expected real errMsg
-  | real == expected = Right real
+  | CI.mk real == CI.mk expected = Right real
   | otherwise = Left errMsg

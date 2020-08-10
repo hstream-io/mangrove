@@ -37,6 +37,7 @@ library
   build-depends:    base                 >= 4.9 && < 5
                   , aeson                >= 1.0
                   , bytestring
+                  , case-insensitive
                   , co-log
                   , containers
                   , deepseq

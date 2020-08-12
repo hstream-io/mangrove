@@ -47,7 +47,7 @@ library
                   , log-store
                   , monad-control        ^>= 1.0
                   , mtl
-                  , network              >= 3.1.1
+                  , network              >= 3.1.2
                   , streamly
                   , streamly-bytestring  >= 0.1.2
                   , text
@@ -71,7 +71,7 @@ executable mangrove
                   , log-store
                   , mangrove
                   , mtl
-                  , network   >= 3.1.1
+                  , network   >= 3.1.2
                   , text
                   , vector
                   , yaml      >= 0.11
@@ -85,7 +85,7 @@ executable mangrove-benchmark-cli
   build-depends:    base                 >= 4.9 && < 5
                   , bytestring
                   , hesp
-                  , network              >= 3.1.1
+                  , network              >= 3.1.2
                   , optparse-applicative ^>= 0.15
                   , text
                   , time
@@ -110,7 +110,7 @@ test-suite mangrove-test
                     , log-store
                     , mangrove
                     , mtl
-                    , network    >= 3.1.1
+                    , network    >= 3.1.2
                     , temporary
                     , text
                     , time

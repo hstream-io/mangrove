@@ -57,7 +57,7 @@ runServer ctx = do
         go sock
 
 setSocketOptions :: Socket -> IO ()
-setSocketOptions = HESP.setDefaultSocketOptions
+setSocketOptions = HESP.setDefaultServerSO
 
 clean :: (Either SomeException a, Socket) -> App ()
 clean (Left e, sock)  = Colog.logException e >> onCloseSocket sock

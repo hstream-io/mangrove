@@ -96,7 +96,7 @@ install:
     echo "source-repository-package"                                          >> cabal.project
     echo "  type:     git"                                                    >> cabal.project
     echo "  location: https://github.com/hstream-io/hesp.git"                 >> cabal.project
-    echo "  tag:      8aaf1917ec08e0f6305f75e9319c1f47ac52d79f"               >> cabal.project
+    echo "  tag:      bc475960a49349def6fbc0daa76b24f86d3f5df2"               >> cabal.project
     echo ""                                                                   >> cabal.project
     echo "source-repository-package"                                          >> cabal.project
     echo "  type:     git"                                                    >> cabal.project
@@ -137,7 +137,7 @@ script:
     echo "source-repository-package"                                          >> cabal.project
     echo "  type:     git"                                                    >> cabal.project
     echo "  location: https://github.com/hstream-io/hesp.git"                 >> cabal.project
-    echo "  tag:      8aaf1917ec08e0f6305f75e9319c1f47ac52d79f"               >> cabal.project
+    echo "  tag:      bc475960a49349def6fbc0daa76b24f86d3f5df2"               >> cabal.project
     echo ""                                                                   >> cabal.project
     echo "source-repository-package"                                          >> cabal.project
     echo "  type:     git"                                                    >> cabal.project

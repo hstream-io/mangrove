@@ -1,12 +1,9 @@
-lint-show:
+lint:
 	-hlint src/ app/ test/ benchmark/
 
-BUILD_TAG := $(shell git rev-parse HEAD)
+BUILD_TAG ?= $(shell git rev-parse HEAD)
+CABAL_MIRROR_NAME ?= hackage.haskell.org
+CABAL_MIRROR_URL ?= http://hackage.haskell.org/
 
 docker-build:
-	@docker build -f Dockerfile.builder . -t mangrove-builder:$(BUILD_TAG)
-	@docker build -f Dockerfile . -t mangrove:$(BUILD_TAG)
-
-docker-build-cn:
-	@docker build --build-arg deb_mirror=http://mirrors.ustc.edu.cn --build-arg cabal_mirror_name=mirrors.tuna.tsinghua.edu.cn --build-arg cabal_mirror_url=http://mirrors.tuna.tsinghua.edu.cn/hackage -f Dockerfile.builder . -t mangrove-builder:$(BUILD_TAG)
-	@docker build -f Dockerfile . -t mangrove:$(BUILD_TAG)
+	@docker build -f Dockerfile --build-arg cabal_mirror_name=$(CABAL_MIRROR_NAME) --build-arg cabal_mirror_url=$(CABAL_MIRROR_URL) -t mangrove:$(BUILD_TAG) .

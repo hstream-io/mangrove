@@ -3,12 +3,13 @@ packages: ./*.cabal
 source-repository-package
   type: git
   location: https://github.com/hstream-io/hesp.git
-  tag: bc475960a49349def6fbc0daa76b24f86d3f5df2
+  tag: v0.1.1.0
 
 source-repository-package
   type: git
   location: https://github.com/hstream-io/log-store
   tag: 384a8c0f941a8382d94a5880fa9da0528d0c7775
+
 source-repository-package
   type: git
   location: https://github.com/hstream-io/haskell-rocksdb-bindings

@@ -51,8 +51,7 @@ runServer ctx = do
     go sock = do
       msgs <- HESP.recvMsgs sock 1024
       unless (V.null msgs) $ do
-        -- FIXME: https://github.com/kowainik/co-log/issues/197
-        --Colog.logDebug $ "Received: " <> Text.pack (show msgs)
+        Colog.logDebug $ "Received: " <> Text.pack (show msgs)
         mapM_ (Mangrove.onRecvMsg sock ctx) msgs
         go sock
 

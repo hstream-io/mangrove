@@ -15,3 +15,8 @@ extra-deps:
   - binary-strict-0.4.8.6@sha256:456da8c1452a18349fbb02134ba608cf7420014cb93e9c39e7e4b99de1c48a7e,2222
   - streamly-bytestring-0.1.2@sha256:cc828f41d1c714c711d38fb213b4ed186febabba598ab080e13255f69c20b13c,2469
   - network-3.1.2.0@sha256:6f39355ca9bd11232bb9011ef6ce5c131cccae1da1c2b073157bd671d915fcd9,4775
+
+  # TODO: If a newer co-log package is released, we can safely remove this.
+  - git: https://github.com/kowainik/co-log
+    commit: 45d5dd6c33f722628a0f9c10e4297f5e11ede20f
+    subdirs: [co-log-core, co-log]

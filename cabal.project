@@ -9,7 +9,20 @@ source-repository-package
   type: git
   location: https://github.com/hstream-io/log-store
   tag: 384a8c0f941a8382d94a5880fa9da0528d0c7775
+
 source-repository-package
   type: git
   location: https://github.com/hstream-io/haskell-rocksdb-bindings
   tag: 0a32a92b09ab66026f79177d096485f9ae7db07c
+
+-- TODO: If a newer co-log package is released, we can safely remove this.
+source-repository-package
+  type: git
+  location: https://github.com/kowainik/co-log
+  tag: 45d5dd6c33f722628a0f9c10e4297f5e11ede20f
+  subdir: co-log-core
+source-repository-package
+  type: git
+  location: https://github.com/kowainik/co-log
+  tag: 45d5dd6c33f722628a0f9c10e4297f5e11ede20f
+  subdir: co-log

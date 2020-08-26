@@ -48,7 +48,10 @@ jobs:
       - name: Pull ghc-${{ matrix.ghc }} image and start build-${{ matrix.ghc }} container.
         run: |
           docker pull $IMAGE:${{ matrix.ghc }}
-          docker run -td --rm --name build-${{ matrix.ghc }} -v $HOME/.cabal:/root/.cabal -v $(pwd):/srv -w /srv $IMAGE:${{ matrix.ghc }} bash
+          docker run -td --rm --name build-${{ matrix.ghc }} -e LC_ALL=en_US.UTF-8 -v $HOME/.cabal:/root/.cabal -v $(pwd):/srv -w /srv $IMAGE:${{ matrix.ghc }} bash
+          docker exec build-${{ matrix.ghc }} apt-get update
+          docker exec build-${{ matrix.ghc }} apt-get install -y locales
+          docker exec build-${{ matrix.ghc }} localedef -i en_US -c -f UTF-8 -A /usr/share/locale/locale.alias en_US.UTF-8
 
       - name: Install dependencies
         run: |

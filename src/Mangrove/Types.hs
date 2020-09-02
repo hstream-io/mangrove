@@ -46,17 +46,10 @@ module Mangrove.Types
   , extractClientPubLevel
   , extractClientPubMethod
   , extractClientSubLevel
-    -- ** Consumer
-  , insertConsumeStream
-  , tryInsertConsumeStream
-  , deleteClientConsume
-  , takeConsumeElements
-  , withConsumeElements
   ) where
 
 import qualified Colog
 import           Control.Applicative         ((<|>))
-import qualified Control.Concurrent.MVar     as Conc
 import           Control.DeepSeq             (NFData)
 import           Control.Monad.Base          (MonadBase)
 import           Control.Monad.IO.Class      (MonadIO)
@@ -82,15 +75,12 @@ import           Network.Socket              (Socket)
 import qualified Network.Socket              as NS
 
 import           Log.Store.Base              (Entry, EntryID)
-import           Mangrove.Streaming          (Serial)
-import qualified Mangrove.Streaming          as S
 import qualified Network.HESP                as HESP
 import qualified Network.HESP.Commands       as HESP
 
 -------------------------------------------------------------------------------
 
-type Topic = ByteString
-type Element = (Entry, EntryID)
+type Element = (EntryID, Entry)
 
 data Env m =
   Env { serverSettings :: ServerSettings m
@@ -122,10 +112,13 @@ data ServerSettings m =
   deriving (Generic)
 
 data DatabaseSetting =
-  DatabaseSetting { dbPath          :: !String
-                  , writeBufferSize :: !Word64
-                  , enableDBStats   :: !Bool
-                  , statsPeriodSec  :: !Word32
+  DatabaseSetting { dbPath                :: !String
+                  , writeBufferSize       :: !Word64
+                  , enableDBStats         :: !Bool
+                  , statsPeriodSec        :: !Word32
+                  , partitionInterval     :: !Int
+                  , partitionFileNumLimit :: !Int
+                  , maxOpenDBs            :: !Int
                   }
   deriving (Generic)
 
@@ -142,11 +135,14 @@ instance MonadIO m => FromJSON (ServerSettings m) where
 instance FromJSON DatabaseSetting where
   parseJSON =
     let opts = Aeson.defaultOptions { Aeson.fieldLabelModifier = flm }
-        flm "dbPath"          = "path"
-        flm "writeBufferSize" = "write-buffer-size"
-        flm "enableDBStats"   = "enable-stats"
-        flm "statsPeriodSec"  = "stats-period"
-        flm x                 = x
+        flm "dbPath"                = "path"
+        flm "writeBufferSize"       = "write-buffer-size"
+        flm "enableDBStats"         = "enable-stats"
+        flm "statsPeriodSec"        = "stats-period"
+        flm "partitionInterval"     = "partition-interval"
+        flm "partitionFileNumLimit" = "partition-file-limit"
+        flm "maxOpenDBs"            = "max-openDBs"
+        flm x                       = x
      in Aeson.genericParseJSON opts
 
 newtype LoggerSetting m =
@@ -232,17 +228,14 @@ getClientIdFromASCIIBytes' bs =
 data ClientStatus =
   ClientStatus { clientSock    :: !Socket
                , clientOptions :: !(Map HESP.Message HESP.Message)
-               , consumeStream :: !(Conc.MVar (HashMap Topic (Serial Element)))
                }
 
 -- | Create client status from connection and handshake message
 -- sent through hesp.
 newClientStatus :: Socket -> Map HESP.Message HESP.Message -> IO ClientStatus
-newClientStatus sock opts = do
-  svar <- Conc.newMVar HMap.empty
+newClientStatus sock opts =
   return ClientStatus { clientSock    = sock
                       , clientOptions = opts
-                      , consumeStream = svar
                       }
 
 clientSocket :: ClientStatus -> Socket
@@ -259,54 +252,6 @@ extractClientPubMethod = extractClientIntOptions "pub-method"
 
 extractClientSubLevel :: ClientStatus -> Either ByteString Integer
 extractClientSubLevel = extractClientIntOptions "sub-level"
-
-insertConsumeStream :: Topic
-                    -> Serial Element
-                    -> ClientStatus
-                    -> IO ()
-insertConsumeStream topic s client =
-  Conc.modifyMVar_ (consumeStream client) $ \table ->
-    return $ HMap.insert topic s table
-
-tryInsertConsumeStream :: Topic
-                       -> Serial Element
-                       -> ClientStatus
-                       -> IO Bool
-tryInsertConsumeStream topic s client =
-  Conc.modifyMVar (consumeStream client) $ \table ->
-    if HMap.member topic table then return (table, False)
-                               else return (HMap.insert topic s table, True)
-
-deleteClientConsume :: Topic -> ClientStatus -> IO ()
-deleteClientConsume topic client =
-  Conc.modifyMVar_ (consumeStream client) $ \table ->
-    return $ HMap.delete topic table
-
-takeConsumeElements :: ClientStatus
-                    -> Topic
-                    -> Int
-                    -> IO (Maybe (Serial Element))
-takeConsumeElements client topic maxn =
-  Conc.modifyMVar (consumeStream client) $ \table -> do
-    let ms = HMap.lookup topic table
-    case ms of
-      Nothing -> return (table, Nothing)
-      Just es -> let (xs, ys) = S.splitAt maxn es
-                     !remain = HMap.adjust (const ys) topic table
-                  in return (remain, Just xs)
-
-withConsumeElements :: ClientStatus
-                    -> Topic
-                    -> Int
-                    -> (Maybe (Serial Element) -> IO ())
-                    -> IO ()
-withConsumeElements client topic maxn f =
-  Conc.modifyMVar_ (consumeStream client) $ \table -> do
-    let ms = HMap.lookup topic table
-    case ms of
-      Nothing -> f ms >> return table
-      Just es -> let (xs, ys) = S.splitAt maxn es
-                  in f (Just xs) >> return (HMap.adjust (const ys) topic table)
 
 -------------------------------------------------------------------------------
 -- Logger Settings

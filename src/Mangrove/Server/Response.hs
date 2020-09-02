@@ -63,9 +63,9 @@ mkSPutRespFail cid topic errmsg =
 mkElementResp :: T.ClientId
               -> ByteString
               -> ByteString
-              -> (ByteString, Word64)
+              -> (Word64, ByteString)
               -> HESP.Message
-mkElementResp cid lcmd topic (p, i) =
+mkElementResp cid lcmd topic (i, p) =
   HESP.mkPushFromList lcmd [ HESP.mkBulkString $ T.packClientIdBS cid
                            , HESP.mkBulkString topic
                            , HESP.mkBulkString "OK"
@@ -74,9 +74,9 @@ mkElementResp cid lcmd topic (p, i) =
                            ]
 
 {-# INLINE mkSimpleElementResp #-}
-mkSimpleElementResp :: (ByteString, Word64)
+mkSimpleElementResp :: (Word64, ByteString)
                     -> HESP.Message
-mkSimpleElementResp (p, i) =
+mkSimpleElementResp (i, p) =
   let e_kvs = HESP.deserialize p
    in case e_kvs of
         Left s -> mkGeneralError $ "Entry deserialization failed: "

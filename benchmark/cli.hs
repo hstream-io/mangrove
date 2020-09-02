@@ -260,7 +260,7 @@ srange verbose SrangeOptions{..} samplingInterval maxTime clientLabels receivedB
       (sid, isDone) <- Conc.takeMVar lastState
       when isDone $
         HESP.sendMsg sock $
-          srangeRequest clientid topic (encodeUtf8 . show $ sid) "" 0 rangeMaxn
+          srangeRequest clientid topic (encodeUtf8 . show $ sid) (encodeUtf8 . show $ sid + rangeMaxn - 1) 0 rangeMaxn
       datas <- HESP.recvMsgs sock 1024
       (lastOffset, bytes, currentDone) <- processSRangeResps verbose datas
       if lastOffset < 0

@@ -8,7 +8,7 @@ module Mangrove.Store
   , sputs
   , sputsAtom
 
-  , readStreamEntry
+  , readEntries
   ) where
 
 import           Control.Exception      (Exception, try)
@@ -16,13 +16,13 @@ import           Control.Monad.IO.Class (MonadIO)
 import           Control.Monad.Reader   (runReaderT)
 import           Data.ByteString        (ByteString)
 import           Data.Either            (fromLeft, fromRight, isLeft)
+import           Data.Sequence          (Seq)
+import qualified Data.Sequence          as Seq
 import           Data.Text              (pack)
 import           Data.Vector            (Vector)
 import qualified Data.Vector            as V
 
 import qualified Log.Store.Base         as LogStore
-import           Mangrove.Streaming     (Serial)
-import qualified Mangrove.Streaming     as S
 import           Mangrove.Types         (Element)
 import           Mangrove.Utils         (bs2str)
 
@@ -38,10 +38,10 @@ sgetAll :: Exception e
         -> Maybe LogStore.EntryID    -- ^ end entry id
         -> Int                       -- ^ max size
         -> Int                       -- ^ offset
-        -> IO (Either e [Element])
+        -> IO (Either e (Seq Element))
 sgetAll db topic start end maxn offset = try $ do
   xs <- readEntries db topic start end
-  return $ take maxn . drop offset $ xs
+  return $ Seq.take maxn . Seq.drop offset $ xs
 
 -- | Put an element to a stream.
 sput :: Exception e
@@ -91,27 +91,17 @@ sputsAtom db topic payloads = do
 -------------------------------------------------------------------------------
 -- Log-store
 
-readStreamEntry :: MonadIO m
-                => LogStore.Context
-                -> ByteString
-                -> Maybe LogStore.EntryID
-                -> Maybe LogStore.EntryID
-                -> m (Serial Element)
-readStreamEntry db topic start end = runReaderT f db
+readEntries :: MonadIO m
+            => LogStore.Context
+            -> ByteString
+            -> Maybe LogStore.EntryID
+            -> Maybe LogStore.EntryID
+            -> m (Seq Element)
+readEntries db topic start end = runReaderT f db
   where
     f = LogStore.open (pack key) ropts >>= \hd -> LogStore.readEntries hd start end
     key = bs2str topic
     ropts = LogStore.defaultOpenOptions
-
--- | Read all entries into list.
---
--- Warning: working on large lists could be very inefficient.
-readEntries :: LogStore.Context
-            -> ByteString
-            -> Maybe LogStore.EntryID
-            -> Maybe LogStore.EntryID
-            -> IO [Element]
-readEntries db topic start end = S.toList =<< readStreamEntry db topic start end
 
 appendEntry :: MonadIO m
             => LogStore.Context

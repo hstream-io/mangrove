@@ -5,9 +5,9 @@ packages:
 
 extra-deps:
   - git: https://github.com/hstream-io/log-store
-    commit: 384a8c0f941a8382d94a5880fa9da0528d0c7775
+    commit: f5ae1459cd5ad30a3943b7974e6f21b5b01a608a
   - git: https://github.com/hstream-io/haskell-rocksdb-bindings
-    commit: 0a32a92b09ab66026f79177d096485f9ae7db07c
+    commit: 688c424312819288ce26b08e1b3f9442f97e6b35
 
   - git: https://github.com/hstream-io/hesp.git
     commit: bc475960a49349def6fbc0daa76b24f86d3f5df2

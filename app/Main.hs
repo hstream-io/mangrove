@@ -33,7 +33,8 @@ main = do
   -- run server
   bracket
     (LogStore.initialize $
-     LogStore.Config dbPath writeBufferSize 0 enableDBStats statsPeriodSec)
+     LogStore.Config dbPath writeBufferSize enableDBStats statsPeriodSec
+                     partitionInterval partitionFileNumLimit maxOpenDBs)
     (runReaderT LogStore.shutDown)
     (Mangrove.runApp env . runServer)
 

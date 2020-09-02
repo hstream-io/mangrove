@@ -14,6 +14,12 @@ database:
   enable-stats: false
   # DB statistics dump period, in seconds
   stats-period: 10
+  # Interval of checking partition files, in seconds
+  partition-interval: 60
+  # Limit of partition files
+  partition-file-limit: 16
+  # Max number of opened DBs, -1 for no limit
+  max-openDBs: -1
 
 logger:
   formatter: rich   # rich or simple

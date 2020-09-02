@@ -28,7 +28,6 @@ flag benchmark-cli
 library
   exposed-modules:  Mangrove
                     Mangrove.Store
-                    Mangrove.Streaming
                     Mangrove.Utils
   other-modules:    Mangrove.Server
                     Mangrove.Server.Response
@@ -48,8 +47,6 @@ library
                   , monad-control        ^>= 1.0
                   , mtl
                   , network              >= 3.1.2
-                  , streamly
-                  , streamly-bytestring  >= 0.1.2
                   , text
                   , time
                   , transformers

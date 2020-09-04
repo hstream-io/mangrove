@@ -16,6 +16,7 @@ module Mangrove.Types
   , runApp
 
   , Element
+  , lastEntryIDInElemSeq
 
     -- * Server
     -- ** Server settings
@@ -64,6 +65,8 @@ import           Data.HashMap.Strict         (HashMap)
 import qualified Data.HashMap.Strict         as HMap
 import           Data.Map.Strict             (Map)
 import qualified Data.Map.Strict             as Map
+import           Data.Sequence               (Seq)
+import qualified Data.Sequence               as Seq
 import           Data.Text                   (Text)
 import           Data.UUID                   (UUID)
 import qualified Data.UUID                   as UUID
@@ -295,3 +298,9 @@ extractClientIntOptions :: ByteString
 extractClientIntOptions label ClientStatus{ clientOptions = opts } = do
   value <- HESP.extractMapField opts (HESP.mkBulkString label)
   validateInteger value label
+
+lastEntryIDInElemSeq :: Seq Element -> Maybe EntryID
+lastEntryIDInElemSeq s =
+  case s of
+    Seq.Empty   -> Nothing
+    _ Seq.:|> x -> Just $ fst x

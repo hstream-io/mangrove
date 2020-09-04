@@ -20,6 +20,7 @@ import           Data.Text.Encoding       (decodeUtf8)
 import           Data.Vector              (Vector)
 import qualified Data.Vector              as V
 import           Data.Word                (Word64)
+import           GHC.Exts                 (IsList(..))
 import           Network.Socket           (Socket)
 import           Text.Read                (readMaybe)
 
@@ -41,9 +42,9 @@ data RequestType
   = Handshake (Map HESP.Message HESP.Message)
   | SPut ClientId ByteString ByteString
   | SPuts ClientId ByteString (V.Vector ByteString)
-  | SRange ClientId ByteString (Maybe Word64) (Maybe Word64) Integer Integer
+  | SRange ClientId ByteString (Maybe EntryID) (Maybe EntryID) Integer Integer
   | XAdd ByteString ByteString
-  | XRange ByteString (Maybe Word64) (Maybe Word64) (Maybe Integer)
+  | XRange ByteString (Maybe EntryID) (Maybe EntryID) (Maybe Integer)
   deriving (Show, Eq)
 
 -- | Parse client request and then send response to client.
@@ -115,9 +116,9 @@ parseSRange paras = do
   cid    <- T.getClientIdFromASCIIBytes' cidStr
   topic  <- HESP.extractBulkStringParam "Topic"     paras 1
   sids   <- HESP.extractBulkStringParam "Start ID"  paras 2
-  sid    <- validateInt                 "Start ID"  sids ""
+  sid    <- validateEntryID             "Start ID"  sids ""
   eids   <- HESP.extractBulkStringParam "End ID"    paras 3
-  eid    <- validateInt                 "End ID"    eids ""
+  eid    <- validateEntryID             "End ID"    eids ""
   offset <- HESP.extractIntegerParam    "Offset"    paras 4
   maxn <- HESP.extractIntegerParam      "Maxn"      paras 5
   return $ SRange cid topic sid eid offset maxn
@@ -137,9 +138,9 @@ parseXRange :: Vector HESP.Message -> Either ByteString RequestType
 parseXRange paras = do
   topic <- HESP.extractBulkStringParam "Topic"     paras 0
   sids  <- HESP.extractBulkStringParam "Start ID"  paras 1
-  sid   <- validateIntSimple sids "-" "Invalid stream ID specified as stream command argument"
+  sid   <- validateEntryIDSimple sids "-" "Invalid stream ID specified as stream command argument"
   eids  <- HESP.extractBulkStringParam "End ID"    paras 2
-  eid   <- validateIntSimple eids "+" "Invalid stream ID specified as stream command argument"
+  eid   <- validateEntryIDSimple eids "+" "Invalid stream ID specified as stream command argument"
   case V.length paras of
     3 -> return $ XRange topic sid eid Nothing
     5 -> do
@@ -190,20 +191,25 @@ processSRange sock ctx (SRange cid topic sid eid offset maxn) = do
       Colog.logWarning $ decodeUtf8 errmsg
       HESP.sendMsg sock $ I.mkGeneralPushError lcmd errmsg
     Just client -> do
-      let cut = Seq.take (fromInteger maxn) . Seq.drop (fromInteger offset)
-      e_s <- liftIO . try $ cut <$> Store.readEntries ctx topic sid eid
       let clientSock = T.clientSocket client
+      e_s <- liftIO $ Store.sgetAll ctx topic sid eid (fromInteger maxn) (fromInteger offset)
       case e_s of
-        Left e@(LogStoreLogNotFoundException _) -> do
-          let errmsg = "Topic " <> topic <> " not found."
-          Colog.logError . Text.pack . show $ e
-          HESP.sendMsg clientSock $ I.mkGeneralPushError lcmd errmsg
+        Left e@(LogStoreLogNotFoundException _) -> handleTopicNotFoundException e clientSock lcmd
         Left e -> throw e
         Right s -> do
-          let msgs = I.mkElementResp cid lcmd topic <$> s
-          HESP.sendMsgs clientSock msgs
+          case Seq.null s of
+            True  -> return ()
+            False -> do
+              let msgs = I.mkElementResp cid lcmd topic <$> s
+              HESP.sendMsgs clientSock msgs
           HESP.sendMsg clientSock $ I.mkCmdPush cid lcmd topic "DONE"
   return $ Just ()
+  where
+    handleTopicNotFoundException :: LogStoreException -> Socket -> ByteString -> App ()
+    handleTopicNotFoundException e clientSock lcmd = do
+      let errmsg = "Topic " <> topic <> " not found."
+      Colog.logError . Text.pack . show $ e
+      HESP.sendMsg clientSock $ I.mkGeneralPushError lcmd errmsg
 processSRange _ _ _ = return Nothing
 
 processXAdd :: Socket -> Context -> RequestType -> App (Maybe ())
@@ -211,7 +217,7 @@ processXAdd sock ctx (XAdd topic payload) = do
   r <- liftIO $ Store.sput ctx topic payload
   case r of
     Right entryID -> do
-      liftIO $ HESP.sendMsg sock $ (HESP.mkBulkString . U.str2bs . show) entryID
+      liftIO $ HESP.sendMsg sock $ (HESP.mkBulkString . U.encodeUtf8) entryID
     Left (e :: SomeException) -> do
       let errmsg = "Message storing failed: " <> (U.str2bs . show) e
       Colog.logWarning $ decodeUtf8 errmsg
@@ -230,8 +236,8 @@ processXRange sock ctx (XRange topic sid eid maxn) = do
       HESP.sendMsg sock $ HESP.mkArrayFromList []
     Left e  -> throw e
     Right s -> do
-      let msgs = I.mkSimpleElementResp <$> s
-      HESP.sendMsgs sock msgs
+      let respMsg = HESP.mkArrayFromList . toList $ I.mkSimpleElementResp <$> s
+      HESP.sendMsg sock respMsg
   return $ Just ()
 processXRange _ _ _ = return Nothing
 
@@ -307,13 +313,10 @@ pubRespByLevel clientSock lcmd cid topic level r =
 -------------------------------------------------------------------------------
 -- Helpers
 
--- Return value of `validateInt` and `validateIntSimple`:
+-- Return value of `validateIntSimple`, `validateEntryID` and `validateEntryIDSimple`:
 -- Left bs: validation failed
 -- Right Nothing: it matched default value
 -- Right (Just n): validation succeeded
-validateInt :: ByteString -> ByteString -> ByteString -> Either ByteString (Maybe Word64)
-validateInt label s defaultVal = validateIntSimple s defaultVal (label <> " must be an integer")
-
 validateIntSimple :: ByteString -> ByteString -> ByteString -> Either ByteString (Maybe Word64)
 validateIntSimple s defaultVal errMsg
   | CI.mk s == CI.mk defaultVal = Right Nothing
@@ -325,3 +328,21 @@ validateBSSimple :: ByteString -> ByteString -> ByteString -> Either ByteString 
 validateBSSimple expected real errMsg
   | CI.mk real == CI.mk expected = Right real
   | otherwise = Left errMsg
+
+validateEntryID
+  :: ByteString
+  -> ByteString
+  -> ByteString
+  -> Either ByteString (Maybe EntryID)
+validateEntryID label s defaultVal = validateEntryIDSimple s defaultVal (label <> " must be an entryID")
+
+validateEntryIDSimple
+  :: ByteString
+  -> ByteString
+  -> ByteString
+  -> Either ByteString (Maybe EntryID)
+validateEntryIDSimple s defaultVal errMsg
+  | CI.mk s == CI.mk defaultVal = Right Nothing
+  | otherwise = case readMaybe (BSC.unpack s) of
+      Nothing -> Left errMsg
+      Just entryID -> Right (Just entryID)

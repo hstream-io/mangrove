@@ -6,6 +6,8 @@ import           Control.Exception    (bracket, SomeException)
 import           Control.Monad.Reader (runReaderT)
 import           Data.ByteString      (ByteString)
 import qualified Data.ByteString      as BS
+import           Data.Sequence        (Seq)
+import qualified Data.Sequence        as Seq
 import           Data.Word            (Word64, Word32)
 import           System.IO.Temp       (withSystemTempDirectory)
 import           Test.Hspec
@@ -17,11 +19,8 @@ spec :: Spec
 spec = do
   streamPutGet
 
-defaultCfWriteBufferSize :: Word64
-defaultCfWriteBufferSize = 64 * 1024 * 1024
-
-defaultDbWriteBufferSize :: Word64
-defaultDbWriteBufferSize = 0
+defaultWriteBufferSize :: Word64
+defaultWriteBufferSize = 64 * 1024 * 1024
 
 defaultEnableDBStats :: Bool
 defaultEnableDBStats = True
@@ -29,14 +28,24 @@ defaultEnableDBStats = True
 defaultDBStatsPeriodSec :: Word32
 defaultDBStatsPeriodSec = 10
 
+defaultPartitionInterval :: Int
+defaultPartitionInterval = 60
+
+defaultPartitionFileNumLimit :: Int
+defaultPartitionFileNumLimit = 16
+
+defaultMaxOpenDBs :: Int
+defaultMaxOpenDBs = -1
+
 streamPutGet :: Spec
 streamPutGet = describe "Stream Put Get operations" $ do
   it "put one element to db and then get it out" $ do
     withSystemTempDirectory "rocksdb-test" $ \dbdir -> do
       bracket
         (Store.initialize $
-          Store.Config dbdir defaultCfWriteBufferSize defaultDbWriteBufferSize
-            defaultEnableDBStats defaultDBStatsPeriodSec)
+          Store.Config dbdir defaultWriteBufferSize defaultEnableDBStats
+            defaultDBStatsPeriodSec defaultPartitionInterval
+            defaultPartitionFileNumLimit defaultMaxOpenDBs)
         (runReaderT Store.shutDown)
         putget `shouldReturn` True
 
@@ -46,11 +55,11 @@ putget ctx = do
   case r of
     Left _        -> return False
     Right entryid -> do
-      r' <- sgetAll ctx topic (Just entryid) Nothing 10 0 :: IO (Either SomeException [(Store.Entry, Store.EntryID)])
+      r' <- sgetAll ctx topic (Just entryid) Nothing 10 0 :: IO (Either SomeException (Seq (Store.EntryID, Store.Entry)))
       case r' of
-        Right [(entry, entryid')] ->
+        Right ((entryid', entry) Seq.:<| _) ->
           return $ entryid' == entryid && entry == payload
-        _                         -> return False
+        _ -> return False
 
 topic :: ByteString
 topic = "test_topic"

@@ -12,7 +12,7 @@ import           Data.ByteString       (ByteString)
 import qualified Data.ByteString       as BS
 import qualified Data.ByteString.Char8 as BC
 import           Data.Char             (ord)
-import           Data.Maybe            (fromJust)
+import           Data.Maybe            (fromJust, isNothing)
 import qualified Data.Text             as Text
 import qualified Data.Text.Encoding    as Text
 import           Data.Time.Clock.POSIX (getPOSIXTime)
@@ -20,12 +20,14 @@ import qualified Data.UUID             as UUID
 import qualified Data.UUID.V4          as UUID
 import           Data.Vector           (Vector)
 import qualified Data.Vector           as V
+import           Log.Store.Base        (EntryID)
 import qualified Network.HESP          as HESP
 import qualified Network.HESP.Commands as HESP
 import           Network.Socket        (HostName, Socket)
 import           Options.Applicative   (Parser)
 import qualified Options.Applicative   as O
 import           Text.Printf           (printf)
+import           Text.Read             (readMaybe)
 
 -------------------------------------------------------------------------------
 
@@ -148,7 +150,7 @@ sputOptions =
 
 data SrangeOptions =
   SrangeOptions { rangeTopicName :: ConsumerTopicName
-                , rangeStartFrom :: Integer
+                , rangeStartFrom :: EntryID
                 , rangeMaxn      :: Integer
                 , rangeIsEager   :: Bool
                 }
@@ -244,62 +246,62 @@ preparePubRequest sock pubLevel pubMethod =
 srange :: Bool
        -> SrangeOptions
        -> Double -> Double
-       -> Chan Int -> MVar Int -> Integer
+       -> Chan Int -> MVar Int -> EntryID
        -> Socket
        -> IO ()
-srange verbose SrangeOptions{..} samplingInterval maxTime clientLabels receivedBytes startOffset sock = do
+srange verbose SrangeOptions{..} samplingInterval maxTime clientLabels receivedBytes startID sock = do
   clientid <- prepareSrangeRequest sock
-  lastState <- Conc.newMVar (startOffset, True)
+  lastState <- Conc.newMVar (startID, 0, True)
   clientLabel <- BC.pack . show <$> Conc.readChan clientLabels
   speedSampling samplingInterval maxTime receivedBytes
                 (action clientid clientLabel lastState)
   where
-    action :: ByteString -> ByteString -> MVar (Integer, Bool) -> IO Int
+    action :: ByteString -> ByteString -> MVar (EntryID, Integer, Bool) -> IO Int
     action clientid label lastState = do
       topic <- genTopic label rangeTopicName
-      (sid, isDone) <- Conc.takeMVar lastState
-      when isDone $
+      (sid, offset, isDone) <- Conc.takeMVar lastState
+      when isDone $ do
         HESP.sendMsg sock $
-          srangeRequest clientid topic (encodeUtf8 . show $ sid) (encodeUtf8 . show $ sid + rangeMaxn - 1) 0 rangeMaxn
+          srangeRequest clientid topic (encodeUtf8 . show $ sid) "" offset rangeMaxn
       datas <- HESP.recvMsgs sock 1024
-      (lastOffset, bytes, currentDone) <- processSRangeResps verbose datas
-      if lastOffset < 0
-         then if rangeIsEager
-                 then do Conc.putMVar lastState (sid, currentDone)
-                         return bytes
-                 else return (-1)
-         else do Conc.putMVar lastState (lastOffset + 1, currentDone)
-                 return bytes
+      (m_lastID, bytes, currentDone) <- processSRangeResps verbose datas
+      case m_lastID of
+        Nothing     -> if rangeIsEager
+                       then do Conc.putMVar lastState (sid, 1, currentDone)
+                               return bytes
+                       else return (-1)
+        Just lastID -> do Conc.putMVar lastState (lastID, 1, currentDone)
+                          return bytes
     genTopic label = \case
       CTopicName (TopicName name)       -> return $ encodeUtf8 name
       CTopicName (ClientTopicName name) -> return $ label <> encodeUtf8 name
 
 processSRangeResps :: Bool
                    -> Vector (Either String HESP.Message)
-                   -> IO (Integer, Int, Bool)
+                   -> IO (Maybe EntryID, Int, Bool)
 processSRangeResps verbose msgs = do
   rs <- V.mapM processMsg msgs
-  let isDone = (fst . V.last) rs < 0
+  let isDone = isNothing $ (fst . V.last) rs
       len = V.length rs
-  let lastOffset = fst $ rs V.! (if len > 1 then len - 2 else 0)
+  let m_lastID = fst $ rs V.! (if len > 1 then len - 2 else 0)
       totalBytes = V.sum . V.map snd $ (if isDone then V.init else id) rs
-  return (lastOffset, totalBytes, isDone)
+  return (m_lastID, totalBytes, isDone)
   where
-    processMsg :: Either String HESP.Message -> IO (Integer, Int)
+    processMsg :: Either String HESP.Message -> IO (Maybe EntryID, Int)
     processMsg (Right x) =
       case x of
         HESP.MatchPush "srange" args -> do
           let resp = fromJust $ HESP.getBulkStringParam args 2
           case resp of
             "OK"   -> do
-              let entryid = fst . fromJust . BC.readInteger . fromJust $ HESP.getBulkStringParam args 3
+              let entryid = fromJust . (readMaybe . BC.unpack) . fromJust $ HESP.getBulkStringParam args 3
                   entrylen = BS.length $ fromJust $ HESP.getBulkStringParam args 4
-              return (entryid, entrylen)
+              return (Just entryid, entrylen)
             "DONE" -> do
               when verbose $ do
                 let topic = fromJust $ HESP.getBulkStringParam args 1
                 putStrLn $ "-> consume topic " <> decodeUtf8 topic <> " done."
-              return (-1, -1)
+              return (Nothing, -1)
             _      -> error "unexpected response"
         _ -> error "unexpected command"
     processMsg (Left _) = error "unexpected message"

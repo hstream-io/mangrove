@@ -81,7 +81,9 @@ executable mangrove-benchmark-cli
   main-is:          benchmark/cli.hs
   build-depends:    base                 >= 4.9 && < 5
                   , bytestring
+                  , containers
                   , hesp
+                  , log-store
                   , network              >= 3.1.2
                   , optparse-applicative ^>= 0.15
                   , text
@@ -103,6 +105,7 @@ test-suite mangrove-test
   hs-source-dirs:     test
   build-depends:      base       >= 4.9 && < 5
                     , bytestring
+                    , containers
                     , hspec
                     , log-store
                     , mangrove

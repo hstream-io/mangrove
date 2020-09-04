@@ -18,8 +18,8 @@ module Mangrove.Server.Response
   ) where
 
 import           Data.ByteString (ByteString)
-import           Data.Word       (Word64)
 
+import           Log.Store.Base  (EntryID)
 import qualified Mangrove.Types  as T
 import qualified Mangrove.Utils  as U
 import qualified Network.HESP    as HESP
@@ -38,7 +38,7 @@ mkHandshakeRespSucc cid =
 {-# INLINE mkSPutRespSucc #-}
 mkSPutRespSucc :: T.ClientId
                -> ByteString
-               -> Word64
+               -> EntryID
                -> HESP.Message
 mkSPutRespSucc cid topic entryID =
   HESP.mkPushFromList "sput" [ HESP.mkBulkString $ T.packClientIdBS cid
@@ -63,7 +63,7 @@ mkSPutRespFail cid topic errmsg =
 mkElementResp :: T.ClientId
               -> ByteString
               -> ByteString
-              -> (Word64, ByteString)
+              -> (EntryID, ByteString)
               -> HESP.Message
 mkElementResp cid lcmd topic (i, p) =
   HESP.mkPushFromList lcmd [ HESP.mkBulkString $ T.packClientIdBS cid
@@ -74,7 +74,7 @@ mkElementResp cid lcmd topic (i, p) =
                            ]
 
 {-# INLINE mkSimpleElementResp #-}
-mkSimpleElementResp :: (Word64, ByteString)
+mkSimpleElementResp :: (EntryID, ByteString)
                     -> HESP.Message
 mkSimpleElementResp (i, p) =
   let e_kvs = HESP.deserialize p

@@ -9,6 +9,7 @@ module Mangrove.Store
   , sputsAtom
 
   , readEntries
+  , readEntriesByCount
   ) where
 
 import           Control.Exception      (Exception, try)
@@ -23,7 +24,7 @@ import           Data.Vector            (Vector)
 import qualified Data.Vector            as V
 
 import qualified Log.Store.Base         as LogStore
-import           Mangrove.Types         (Element)
+import           Mangrove.Types         (Element, lastEntryIDInElemSeq)
 import           Mangrove.Utils         (bs2str)
 
 -------------------------------------------------------------------------------
@@ -40,8 +41,16 @@ sgetAll :: Exception e
         -> Int                       -- ^ offset
         -> IO (Either e (Seq Element))
 sgetAll db topic start end maxn offset = try $ do
-  xs <- readEntries db topic start end
-  return $ Seq.take maxn . Seq.drop offset $ xs
+  dropped <- readEntriesByCount db topic start (offset + 1)
+  let cut = case end of
+        Nothing -> id
+        Just x  -> Seq.takeWhileL (\(i, _) -> i <= x)
+  let m_newsid = lastEntryIDInElemSeq dropped
+  case m_newsid of
+    Nothing     -> return $ Seq.empty
+    Just newsid -> case Seq.length dropped == offset + 1 of
+      False -> return Seq.empty
+      True  -> cut <$> readEntriesByCount db topic (Just newsid) maxn
 
 -- | Put an element to a stream.
 sput :: Exception e
@@ -100,6 +109,19 @@ readEntries :: MonadIO m
 readEntries db topic start end = runReaderT f db
   where
     f = LogStore.open (pack key) ropts >>= \hd -> LogStore.readEntries hd start end
+    key = bs2str topic
+    ropts = LogStore.defaultOpenOptions
+
+readEntriesByCount
+  :: MonadIO m
+  => LogStore.Context
+  -> ByteString
+  -> Maybe LogStore.EntryID
+  -> Int
+  -> m (Seq Element)
+readEntriesByCount db topic start maxn = runReaderT f db
+  where
+    f = LogStore.open (pack key) ropts >>= \hd -> LogStore.readEntriesByCount hd start maxn
     key = bs2str topic
     ropts = LogStore.defaultOpenOptions
 
